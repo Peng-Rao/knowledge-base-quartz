@@ -16,107 +16,60 @@ graph TD
     R[Represent<br/>graph data model]:::cap
     I[Integrate<br/>shared identity / ER]:::cap
     Q[Reason / Query<br/>inference + graph QL]:::cap
-
     R --- KG
     I --- KG
     Q --- KG
-
     GraphDB[Plain Graph DB<br/>only Represent]:::sys
     DataLake[Data Lake / RDB<br/>only Integrate]:::sys
     Prolog[Prolog / Rule engine<br/>only Reason]:::sys
-
     GraphDB -.precursor.-> R
     DataLake -.precursor.-> I
     Prolog -.precursor.-> Q
-
-    classDef kg fill:#1e3a8a,stroke:#1e3a8a,color:#fff
+    classDef kg fill:#BAE6FD,stroke:#0284C7,color:#0F172A
     classDef cap fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
     classDef sys fill:#f3f4f6,stroke:#9ca3af,color:#374151
 ```
 
 
-### Historical lineage
+### The four types Knowledge Graph
 
-```mermaid
-timeline
-    title 70 years of knowledge representation
-    1956 : Semantic networks (Quillian)
-    1970s : Frames (Minsky)
-    1980s : Description Logics (KL-ONE, ALC)
-    1993 : Gruber defines "ontology"
-    1999 : RDF (W3C)
-    2004 : OWL (W3C)
-    2007 : DBpedia, YAGO, Freebase
-    2012 : Google Knowledge Graph
-          : "things, not strings"
-    2014 : Wikidata
-    2018 : KG embedding boom (TransE, ComplEx, RotatE)
-    2024 : GraphRAG (Microsoft)
-```
+**Encyclopedic Knowledge Graphs**
 
-Two key findings from this timeline:
-- **The term is younger than the idea.** Semantic networks and ontologies have done the same work for decades. "Knowledge Graph" became dominant only after Google's 2012 announcement.
-- **Each generation added a missing layer.** Semantic networks lacked formal semantics → DLs added them. DLs lacked web-scale serialization → RDF added it. RDF lacked rich axioms → OWL added them. OWL lacked statistical/learning capabilities → embeddings added them. Embeddings lacked symbolic reasoning → neuro-symbolic + GraphRAG add it back.
+- **Purpose:** Represent general, real-world knowledge.
+- **Characteristics:** These are the most ubiquitous KGs. They are constructed by integrating massive amounts of information from extensive sources, including human experts, encyclopedias (like Wikipedia), and various databases. Some automatically extract web data to improve over time.
+- **Examples:** Wikidata, Freebase, DBpedia, YAGO, NELL, and Knowledge Ocean (KO).
 
+**Commonsense Knowledge Graphs**
 
-### Anatomy of a KG (the conceptual layers)
+- **Purpose:** Formulate knowledge about everyday concepts, objects, events, and their relationships.
+- **Characteristics:** Unlike encyclopedic KGs, these model "tacit" knowledge extracted from text (e.g., understanding that a _Car_ is _UsedFor_ a _Drive_). They are crucial for helping computers understand human language meanings and causal effects for reasoning.
+- **Examples:** ConceptNet, ATOMIC, ASER, TransOMCS, and CausalBank.
 
-A KG has four conceptual layers.
-```
-┌──────────────────────────────────────────────────────────┐
-│  Layer 4: Reasoning / Rules                              │  ← OWL axioms, SHACL rules, SWRL
-│  "If Parent(x,y) ∧ Parent(y,z) then Grandparent(x,z)"    │
-├──────────────────────────────────────────────────────────┤
-│  Layer 3: Schema / Ontology (T-Box)                      │  ← classes, properties, hierarchy
-│  Person ⊑ Agent;  hasParent: Person → Person             │
-├──────────────────────────────────────────────────────────┤
-│  Layer 2: Instance Data (A-Box) — "the graph"            │  ← the triples / nodes / edges
-│  alice rdf:type Person; alice hasParent bob              │
-├──────────────────────────────────────────────────────────┤
-│  Layer 1: Identity                                       │  ← IRIs, blank nodes, entity resolution
-│  alice ≡ <http://ex.org/Alice123>                        │
-└──────────────────────────────────────────────────────────┘
+**Domain-specific Knowledge Graphs**
 
-```
-- **Layer 1 (identity)** is where most enterprise KG projects fail: getting two systems to agree that "Alice in HR" is the same entity as "A. Smith in Sales" is the _hard_ part.
-- **Layer 2 (data)** is what people draw when they say "show me a KG."
-- **Layer 3 (schema)** is the ontology — the contract that data must satisfy.
-- **Layer 4 (rules)** is what gives a KG its inferential power and distinguishes it from a generic graph.
+- **Purpose:** Represent highly specialized knowledge within a particular field, such as medicine, biology, finance, geology, chemistry, or genealogy.
+- **Characteristics:** Compared to general encyclopedic KGs, they are typically smaller in size but offer much higher accuracy and reliability for their specific domains.
+- **Examples:** UMLS (biomedical concepts).
 
-For example, the same KG fact (`alice hasParent bob`) is supported by all four layers simultaneously. Each layer adds a different kind of guarantee.
+**Multi-modal Knowledge Graphs**
 
-```mermaid
-graph TD
-    L4["<b>Layer 4 — Rules</b><br/>Parent(x,y) ∧ Parent(y,z) ⇒ Grandparent(x,z)"]:::l4
-    L3["<b>Layer 3 — Schema (T-Box)</b><br/>Person ⊑ Agent<br/>hasParent: Person → Person"]:::l3
-    L2["<b>Layer 2 — Instance data (A-Box)</b><br/>:alice rdf:type :Person<br/>:alice :hasParent :bob"]:::l2
-    L1["<b>Layer 1 — Identity</b><br/>:alice ≡ &lt;http://ex.org/Alice123&gt;<br/>(stable IRI, entity-resolved)"]:::l1
-
-    L4 -->|inference fires over| L3
-    L3 -->|constrains and types| L2
-    L2 -->|grounds in| L1
-
-    classDef l1 fill:#fef3c7,stroke:#a16207,color:#713f12
-    classDef l2 fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
-    classDef l3 fill:#dcfce7,stroke:#15803d,color:#14532d
-    classDef l4 fill:#fce7f3,stroke:#be185d,color:#831843
-```
+- **Purpose:** Represent facts across multiple modalities, breaking away from conventional text-only data.
+- **Characteristics:** They incorporate non-textual information like images, sounds, and videos alongside text. This makes them highly useful for multi-modal tasks like image-text matching, visual question answering, and recommendation systems.
+- **Examples:** IMGpedia, MMKG, and Richpedia.
 
 ### The two competing data models
 
-Two models dominate.
+There are two popular **Knowledge Graph Data Models**:
 
-| | RDF triples | Property Graph (LPG) |
-|---|---|---|
-| **Atom** | `(subject, predicate, object)` triple | Node *with* properties; edge *with* properties |
-| **Identity** | Global IRIs | Local internal IDs |
-| **Schema** | Optional, separate (RDFS/OWL) | Optional, often inline (labels) |
-| **Standard query** | SPARQL | Cypher / GQL / Gremlin |
-| **Strength** | Web-scale interop, formal semantics | Ergonomics, traversal performance |
-| **Weakness** | Verbose, awkward for n-ary relations | No standard semantics, weaker reasoning |
-| **Reference impl.** | Apache Jena, GraphDB, Stardog, Virtuoso | Neo4j, TigerGraph, Memgraph |
-
-**Rule of thumb for the thesis:** if you care about *interoperability with public KGs* (Wikidata, DBpedia) or *formal reasoning* → RDF. If you care about *traversal performance* or *developer ergonomics* in an application → LPG. Modern engines (Neptune, Stardog) try to bridge both.
+|                     | RDF triples                             | Property Graph (LPG)                           |
+| ------------------- | --------------------------------------- | ---------------------------------------------- |
+| **Atom**            | `(subject, predicate, object)` triple   | Node *with* properties; edge *with* properties |
+| **Identity**        | Global IRIs                             | Local internal IDs                             |
+| **Schema**          | Optional, separate (RDFS/OWL)           | Optional, often inline (labels)                |
+| **Standard query**  | SPARQL                                  | Cypher / GQL / Gremlin                         |
+| **Strength**        | Web-scale interop, formal semantics     | Ergonomics, traversal performance              |
+| **Weakness**        | Verbose, awkward for n-ary relations    | No standard semantics, weaker reasoning        |
+| **Reference impl.** | Apache Jena, GraphDB, Stardog, Virtuoso | Neo4j, TigerGraph, Memgraph                    |
 
 Every RDF fact has exactly three positions. The picture below shows how `Alice worksAt Acme` decomposes, what each position is allowed to be, and how the same fact looks as a subgraph.
 
@@ -152,9 +105,45 @@ graph TB
 ```
 
 
-## Formal Definition & Data Models
+### Historical lineage
 
-### Directed edge-labelled graphs (the RDF view)
+| Year  | Concept                                                          | Description                                   |
+| ----- | ---------------------------------------------------------------- | --------------------------------------------- |
+| 1956  | Semantic networks (Quillian)                                     | graphs of concepts, no formal semantics       |
+| 1970s | Frames (Minsky)                                                  | slot-and-filler, structured but ad hoc        |
+| 1980s | Description Logics (KL-ONE, ALC)                                 | formal, decidable subset of FOL               |
+| 1990s | Ontologies (Gruber: "shared conceptualization")                  | vocabularies for AI knowledge sharing         |
+| 1999  | **Resource Description Framework** (W3C)                         | triples as the web-scale data model           |
+| 2004  | **Web Ontology Language** (W3C)                                  | DL-grounded ontology language on top of RDF   |
+| 2007  | DBpedia, YAGO, Freebase                                          | first large-scale public KGs from Wikipedia   |
+| 2012  | Google Knowledge Graph                                           | coined the modern term; "things, not strings" |
+| 2014  | Wikidata launches                                                | collaborative, multilingual KG                |
+| 2018+ | KG embeddings boom (TransE, ComplEx, RotatE) + KG-augmented LLMs | bring KGs into the deep-learning stack        |
+| 2024  | GraphRAG (Microsoft)                                             | KGs as the retrieval substrate for LLMs       |
+
+```mermaid
+timeline
+    title 70 years of knowledge representation
+    1956 : Semantic networks (Quillian)
+    1970s : Frames (Minsky)
+    1980s : Description Logics (KL-ONE, ALC)
+    1993 : Gruber defines "ontology"
+    1999 : RDF (W3C)
+    2004 : OWL (W3C)
+    2007 : DBpedia, YAGO, Freebase
+    2012 : Google Knowledge Graph
+          : "things, not strings"
+    2014 : Wikidata
+    2018 : KG embedding boom (TransE, ComplEx, RotatE)
+    2024 : GraphRAG (Microsoft)
+```
+
+From 2018 onward, knowledge graph (KG) research saw a surge in embedding models (TransE, ComplEx, RotatE) that map entities and relations into continuous vector spaces, enabling link prediction and neural‑driven reasoning. Concurrently, KG‑augmented large language models emerged to ground LLMs with structured, updatable facts, mitigating hallucinations and forming a neuro‑symbolic stack that integrates KGs deeply into deep‑learning pipelines. **This trend directly underpins Retrieval-Augmented Generation (RAG): KGs serve as structured, interpretable knowledge bases for retrieval, with Microsoft’s GraphRAG (2024) as a prominent example.**
+
+
+
+
+## Directed edge-labelled graphs (the RDF view)
 
 A **directed edge-labelled graph** is a tuple
 $$G = (V,\ E,\ L)$$where
@@ -177,7 +166,10 @@ graph LR
     classDef set fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
 ```
 
-### Property graphs (the Neo4j view)
+
+## Property graphs (the Neo4j view)
+
+### Definition
 
 A **property graph** is a tuple
 
@@ -216,6 +208,10 @@ graph LR
 
 
 
+### Cypher Language
+
+
+
 ## Software Ecosystem & Graphical Representation
 
 ### Taxonomy of KG storage software
@@ -242,8 +238,6 @@ graph TD
     classDef mm  fill:#fce7f3,stroke:#be185d,color:#831843
     classDef tool fill:#f3f4f6,stroke:#9ca3af,color:#374151
 ```
-> _Sources: own synthesis from the DB-Engines ranking ([db-engines.com/en/ranking/graph+dbms](https://db-engines.com/en/ranking/graph+dbms)) and the comparative reviews in Besta et al. (2023), "Demystifying Graph Databases", and Sahu et al. (2020), "The Ubiquity of Large Graphs and Surprising Challenges of Graph Processing._
-
 
 
 ### Toolchain

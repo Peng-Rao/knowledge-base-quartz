@@ -139,12 +139,10 @@ function rebuildHighlights(state: DiscussionState) {
     
     if (ranges.length > 0) {
       highlightRangesByCommentId.set(c.id, ranges)
-      // Replies inherit the parent's highlight anchor
       for (const r of c.replies ?? []) {
         highlightRangesByCommentId.set(r.id, ranges)
       }
     } else {
-      // Check if any reply has a quote, and inherit it back to parent and other replies
       for (const r of c.replies ?? []) {
         const { quotes: rQuotes } = parseBodyHtml(r.bodyHTML)
         const rRanges: Range[] = []
@@ -188,6 +186,57 @@ function applyHighlights(activeCommentId?: string) {
   }
 }
 
+function getCommentIdFromPoint(x: number, y: number): string | null {
+  for (const [id, ranges] of highlightRangesByCommentId.entries()) {
+    for (const r of ranges) {
+      const rects = r.getClientRects()
+      for (let i = 0; i < rects.length; i++) {
+        const rect = rects[i]
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+          return id
+        }
+      }
+    }
+  }
+  return null
+}
+
+function highlightSidebarItem(id: string) {
+  document.querySelectorAll('.comment-sidebar-item').forEach((el) => {
+    if ((el as HTMLElement).dataset.commentId === id) {
+      el.classList.add('active-comment')
+    } else {
+      el.classList.remove('active-comment')
+    }
+  })
+}
+
+function unhighlightSidebarItems() {
+  document.querySelectorAll('.comment-sidebar-item').forEach((el) => {
+    el.classList.remove('active-comment')
+  })
+}
+
+let isAutoScrollingList = false
+
+function scrollToSidebarItem(id: string, smooth = true) {
+  const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement
+  const el = document.querySelector(`.comment-sidebar-item[data-comment-id="${id}"]`) as HTMLElement
+  if (!list || !el) return
+
+  const listRect = list.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+
+  if (smooth || elRect.top < listRect.top || elRect.bottom > listRect.bottom) {
+    isAutoScrollingList = true
+    list.scrollTo({
+      top: el.offsetTop - list.offsetTop - list.clientHeight / 2 + el.clientHeight / 2,
+      behavior: smooth ? "smooth" : "auto",
+    })
+    setTimeout(() => { isAutoScrollingList = false }, 500)
+  }
+}
+
 function renderAll(state: DiscussionState) {
   rebuildHighlights(state)
 
@@ -209,6 +258,7 @@ function renderAll(state: DiscussionState) {
   for (const c of flat) {
     const li = document.createElement("li")
     li.className = "comment-sidebar-item"
+    li.dataset.commentId = c.id
     if (c.isReply) {
       li.style.marginLeft = "1.5rem"
       li.style.borderLeftColor = "var(--tertiary)"
@@ -232,8 +282,14 @@ function renderAll(state: DiscussionState) {
 
     if (highlightRangesByCommentId.has(c.id)) {
       li.style.cursor = "pointer"
-      li.addEventListener("mouseenter", () => applyHighlights(c.id))
-      li.addEventListener("mouseleave", () => applyHighlights())
+      li.addEventListener("mouseenter", () => {
+        applyHighlights(c.id)
+        highlightSidebarItem(c.id)
+      })
+      li.addEventListener("mouseleave", () => {
+        applyHighlights()
+        unhighlightSidebarItems()
+      })
       li.addEventListener("click", (ev) => {
         if ((ev.target as HTMLElement).closest("a")) return
         scrollToFirstHighlightFor(c.id)
@@ -368,6 +424,84 @@ function setupSelectionUI(cleanups: Array<() => void>) {
   })
 }
 
+function setupArticleInteractions(cleanups: Array<() => void>) {
+  const article = document.querySelector(ARTICLE_SELECTOR) as HTMLElement | null
+  if (!article) return
+
+  let activeHighlightId: string | null = null
+
+  const onMouseMove = (e: MouseEvent) => {
+    const id = getCommentIdFromPoint(e.clientX, e.clientY)
+    if (id !== activeHighlightId) {
+      activeHighlightId = id
+      if (id) {
+        applyHighlights(id)
+        highlightSidebarItem(id)
+        article.style.cursor = "pointer"
+      } else {
+        applyHighlights()
+        unhighlightSidebarItems()
+        article.style.cursor = ""
+      }
+    }
+  }
+
+  const onClick = (e: MouseEvent) => {
+    const id = getCommentIdFromPoint(e.clientX, e.clientY)
+    if (id) {
+      scrollToSidebarItem(id, true)
+    }
+  }
+
+  article.addEventListener("mousemove", onMouseMove)
+  article.addEventListener("click", onClick)
+
+  cleanups.push(() => {
+    article.removeEventListener("mousemove", onMouseMove)
+    article.removeEventListener("click", onClick)
+  })
+}
+
+function setupScrollSync(cleanups: Array<() => void>) {
+  let scrollRaf: number | null = null
+
+  const onScroll = () => {
+    if (isAutoScrollingList) return
+
+    if (scrollRaf !== null) return
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = null
+
+      const centerY = window.innerHeight / 3
+      let closestId: string | null = null
+      let minDistance = Infinity
+
+      for (const [id, ranges] of highlightRangesByCommentId.entries()) {
+        for (const r of ranges) {
+          const rect = r.getBoundingClientRect()
+          if (rect.bottom > 0 && rect.top < window.innerHeight) {
+            const distance = Math.abs(rect.top - centerY)
+            if (distance < minDistance) {
+              minDistance = distance
+              closestId = id
+            }
+          }
+        }
+      }
+
+      if (closestId) {
+        scrollToSidebarItem(closestId, false)
+      }
+    })
+  }
+
+  window.addEventListener("scroll", onScroll, { passive: true })
+  cleanups.push(() => {
+    window.removeEventListener("scroll", onScroll)
+    if (scrollRaf !== null) cancelAnimationFrame(scrollRaf)
+  })
+}
+
 function isGiscusMessage(event: MessageEvent): boolean {
   return (
     event.origin === "https://giscus.app" &&
@@ -474,6 +608,8 @@ document.addEventListener("nav", () => {
   cleanups.push(() => window.removeEventListener("message", onMessage))
 
   setupSelectionUI(cleanups)
+  setupArticleInteractions(cleanups)
+  setupScrollSync(cleanups)
 
   if (lastDiscussionState) renderAll(lastDiscussionState)
 

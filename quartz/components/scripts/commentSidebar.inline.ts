@@ -102,7 +102,9 @@ function findTextRanges(root: Element, target: string): Range[] {
     acceptNode(node: Node) {
       const parent = (node as Text).parentElement
       if (!parent) return NodeFilter.FILTER_REJECT
-      if (parent.closest(".comment-sidebar, .giscus, pre, code, script, style, .comment-margin-card")) {
+      if (
+        parent.closest(".comment-sidebar, .giscus, pre, code, script, style, .comment-margin-card")
+      ) {
         return NodeFilter.FILTER_REJECT
       }
       return NodeFilter.FILTER_ACCEPT
@@ -272,10 +274,9 @@ function renderUnanchored(unanchored: GiscusReply[], totalCount: number) {
   }
   list.removeAttribute("data-empty")
   list.innerHTML = unanchored
-    .map(
-      (c) => {
-        const { previewHtml } = parseBodyHtml(c.bodyHTML)
-        return `
+    .map((c) => {
+      const { previewHtml } = parseBodyHtml(c.bodyHTML)
+      return `
         <li class="comment-sidebar-item">
           <a class="comment-author" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">
             <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
@@ -285,8 +286,7 @@ function renderUnanchored(unanchored: GiscusReply[], totalCount: number) {
           ${previewHtml ? `<div class="comment-body">${previewHtml}</div>` : ""}
         </li>
       `
-      },
-    )
+    })
     .join("")
 }
 
@@ -486,9 +486,10 @@ async function fetchDiscussion(): Promise<GiscusApiResponse | null> {
   inflightFetch?.abort()
   inflightFetch = new AbortController()
   try {
-    const res = await fetch(`https://giscus.app/api/discussions?${params.toString()}`, {
+    // Use corsproxy.io to bypass Giscus CORS restrictions
+    const targetUrl = encodeURIComponent(`https://giscus.app/api/discussions?${params.toString()}`)
+    const res = await fetch(`https://corsproxy.io/?${targetUrl}`, {
       signal: inflightFetch.signal,
-      credentials: "omit",
     })
     if (!res.ok) return null
     return (await res.json()) as GiscusApiResponse
@@ -509,8 +510,7 @@ async function refresh(force = false) {
   if (!data) {
     const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
     if (list) {
-      list.innerHTML =
-        '<li class="comment-sidebar-empty">Could not load comments.</li>'
+      list.innerHTML = '<li class="comment-sidebar-empty">Could not load comments.</li>'
     }
     return
   }
@@ -568,7 +568,6 @@ document.addEventListener("nav", () => {
   }
 
   if (lastDiscussionState) renderAll(lastDiscussionState)
-
   ;(window as unknown as { addCleanup: (fn: () => void) => void }).addCleanup(() => {
     cleanups.forEach((fn) => fn())
     inflightFetch?.abort()

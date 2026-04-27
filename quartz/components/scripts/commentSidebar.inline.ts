@@ -628,6 +628,7 @@ async function fetchDiscussion(): Promise<GiscusApiResponse | null> {
     category_id: categoryId,
     strict: giscus.dataset.strict || "0",
     backLink: window.location.href,
+    _t: Date.now().toString(),
   })
 
   inflightFetch?.abort()

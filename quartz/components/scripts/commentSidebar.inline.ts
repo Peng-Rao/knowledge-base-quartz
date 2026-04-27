@@ -503,21 +503,36 @@ async function refresh(force = false) {
   const now = Date.now()
   if (!force && now - lastFetchAt < 1500) return
   lastFetchAt = now
+  console.log("[CommentSidebar] refresh()")
   const data = await fetchDiscussion()
-  if (!data) return
+  console.log("[CommentSidebar] fetched:", data)
+  if (!data) {
+    const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
+    if (list) {
+      list.innerHTML =
+        '<li class="comment-sidebar-empty">Could not load comments.</li>'
+    }
+    return
+  }
   const comments = data.discussion?.comments ?? []
   lastDiscussionState = {
     totalCommentCount: data.discussion?.totalCommentCount ?? comments.length,
     comments,
   }
+  console.log("[CommentSidebar] state:", lastDiscussionState)
   renderAll(lastDiscussionState)
 }
 
 document.addEventListener("nav", () => {
+  console.log("[CommentSidebar] nav handler firing")
   const sidebar = document.querySelector(".comment-sidebar") as HTMLElement | null
-  if (!sidebar) return
+  if (!sidebar) {
+    console.log("[CommentSidebar] no .comment-sidebar in DOM")
+    return
+  }
 
   if (!document.querySelector(".giscus")) {
+    console.log("[CommentSidebar] no .giscus container; hiding sidebar")
     sidebar.style.display = "none"
     return
   }

@@ -35,13 +35,11 @@ interface DiscussionState {
 
 const ARTICLE_SELECTOR = "article"
 const SIDEBAR_LIST_SELECTOR = ".comment-sidebar-list"
-const MARGIN_LAYER_ID = "comment-margin-layer"
 const HIGHLIGHT_NAME = "comment-anchor"
 const HIGHLIGHT_ACTIVE = "comment-anchor-active"
 
 let lastDiscussionState: DiscussionState | null = null
 const highlightRangesByCommentId: Map<string, Range[]> = new Map()
-let resizeRaf: number | null = null
 let inflightFetch: AbortController | null = null
 let lastFetchAt = 0
 
@@ -83,11 +81,13 @@ function parseBodyHtml(html: string): { quotes: string[]; previewHtml: string } 
   return { quotes, previewHtml: tpl.innerHTML.trim() }
 }
 
-function flattenComments(state: DiscussionState): GiscusReply[] {
-  const out: GiscusReply[] = []
+function flattenComments(state: DiscussionState): (GiscusReply & { isReply?: boolean })[] {
+  const out: (GiscusReply & { isReply?: boolean })[] = []
   for (const c of state.comments ?? []) {
     out.push(c)
-    for (const r of c.replies ?? []) out.push(r)
+    for (const r of c.replies ?? []) {
+      out.push({ ...r, isReply: true })
+    }
   }
   return out
 }
@@ -102,9 +102,7 @@ function findTextRanges(root: Element, target: string): Range[] {
     acceptNode(node: Node) {
       const parent = (node as Text).parentElement
       if (!parent) return NodeFilter.FILTER_REJECT
-      if (
-        parent.closest(".comment-sidebar, .giscus, pre, code, script, style, .comment-margin-card")
-      ) {
+      if (parent.closest(".comment-sidebar, .giscus, pre, code, script, style")) {
         return NodeFilter.FILTER_REJECT
       }
       return NodeFilter.FILTER_ACCEPT
@@ -131,13 +129,37 @@ function rebuildHighlights(state: DiscussionState) {
   highlightRangesByCommentId.clear()
   const article = document.querySelector(ARTICLE_SELECTOR)
   if (!article) return
-  for (const c of flattenComments(state)) {
+  
+  for (const c of state.comments ?? []) {
     const { quotes } = parseBodyHtml(c.bodyHTML)
     const ranges: Range[] = []
     for (const q of quotes) {
       ranges.push(...findTextRanges(article, q))
     }
-    if (ranges.length > 0) highlightRangesByCommentId.set(c.id, ranges)
+    
+    if (ranges.length > 0) {
+      highlightRangesByCommentId.set(c.id, ranges)
+      // Replies inherit the parent's highlight anchor
+      for (const r of c.replies ?? []) {
+        highlightRangesByCommentId.set(r.id, ranges)
+      }
+    } else {
+      // Check if any reply has a quote, and inherit it back to parent and other replies
+      for (const r of c.replies ?? []) {
+        const { quotes: rQuotes } = parseBodyHtml(r.bodyHTML)
+        const rRanges: Range[] = []
+        for (const q of rQuotes) {
+          rRanges.push(...findTextRanges(article, q))
+        }
+        if (rRanges.length > 0) {
+          highlightRangesByCommentId.set(c.id, rRanges)
+          for (const rep of c.replies ?? []) {
+            highlightRangesByCommentId.set(rep.id, rRanges)
+          }
+          break
+        }
+      }
+    }
   }
   applyHighlights()
 }
@@ -166,150 +188,60 @@ function applyHighlights(activeCommentId?: string) {
   }
 }
 
-function ensureMarginLayer(): HTMLElement {
-  let layer = document.getElementById(MARGIN_LAYER_ID) as HTMLElement | null
-  if (!layer) {
-    layer = document.createElement("div")
-    layer.id = MARGIN_LAYER_ID
-    layer.className = "comment-margin-layer"
-    document.body.appendChild(layer)
-  }
-  return layer
-}
+function renderAll(state: DiscussionState) {
+  rebuildHighlights(state)
 
-function renderCardInner(c: GiscusReply): string {
-  const { previewHtml } = parseBodyHtml(c.bodyHTML)
-  return `
-    <a class="comment-margin-author" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">
-      <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
-      <span class="comment-margin-name">${escapeHtml(c.author.login)}</span>
-      <span class="comment-margin-time">${timeAgo(c.createdAt)}</span>
-    </a>
-    ${previewHtml ? `<div class="comment-margin-body">${previewHtml}</div>` : ""}
-  `
-}
-
-function buildCard(c: GiscusReply): HTMLElement {
-  const card = document.createElement("div")
-  card.className = "comment-margin-card"
-  card.dataset.commentId = c.id
-  card.innerHTML = renderCardInner(c)
-  card.addEventListener("mouseenter", () => applyHighlights(c.id))
-  card.addEventListener("mouseleave", () => applyHighlights())
-  card.addEventListener("click", (ev) => {
-    if ((ev.target as HTMLElement).closest("a")) return
-    scrollToFirstHighlightFor(c.id)
-  })
-  return card
-}
-
-function layoutMarginCards() {
-  const layer = document.getElementById(MARGIN_LAYER_ID)
-  if (!layer) return
-  const article = document.querySelector(ARTICLE_SELECTOR) as HTMLElement | null
-  if (!article) return
-
-  const articleRect = article.getBoundingClientRect()
-  const layerLeft = articleRect.right + window.scrollX + 24
-  const available = window.innerWidth - (articleRect.right + 24) - 16
-  const width = Math.max(220, Math.min(320, available))
-
-  if (available < 220) {
-    layer.style.display = "none"
-    return
-  }
-  layer.style.display = ""
-  layer.style.left = `${layerLeft}px`
-  layer.style.width = `${width}px`
-
-  // Order cards by their target Y; stack to avoid overlap.
-  const cards = Array.from(layer.querySelectorAll<HTMLElement>(".comment-margin-card"))
-  const targets: { card: HTMLElement; top: number }[] = []
-  for (const card of cards) {
-    const id = card.dataset.commentId
-    if (!id) continue
-    const ranges = highlightRangesByCommentId.get(id)
-    if (!ranges || ranges.length === 0) {
-      card.style.display = "none"
-      continue
-    }
-    card.style.display = ""
-    const rect = ranges[0].getBoundingClientRect()
-    targets.push({ card, top: rect.top + window.scrollY })
-  }
-  targets.sort((a, b) => a.top - b.top)
-
-  const GAP = 8
-  let cursor = -Infinity
-  for (const t of targets) {
-    const desired = Math.max(t.top, cursor + GAP)
-    t.card.style.top = `${desired}px`
-    // After layout, advance cursor by actual height
-    cursor = desired + t.card.offsetHeight
-  }
-}
-
-function scheduleLayout() {
-  if (resizeRaf !== null) return
-  resizeRaf = requestAnimationFrame(() => {
-    resizeRaf = null
-    layoutMarginCards()
-  })
-}
-
-function renderUnanchored(unanchored: GiscusReply[], totalCount: number) {
   const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
   if (!list) return
-  if (totalCount === 0) {
+
+  list.innerHTML = ""
+
+  if (state.totalCommentCount === 0) {
     list.innerHTML =
       '<li class="comment-sidebar-empty">No comments yet. Select text on the page or scroll down to start the conversation.</li>'
     list.setAttribute("data-empty", "true")
     return
   }
-  if (unanchored.length === 0) {
-    list.innerHTML =
-      '<li class="comment-sidebar-empty">All comments are anchored to passages in the article.</li>'
-    list.setAttribute("data-empty", "true")
-    return
-  }
+
   list.removeAttribute("data-empty")
-  list.innerHTML = unanchored
-    .map((c) => {
-      const { previewHtml } = parseBodyHtml(c.bodyHTML)
-      return `
-        <li class="comment-sidebar-item">
-          <a class="comment-author" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">
-            <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
-            <span class="comment-author-name">${escapeHtml(c.author.login)}</span>
-            <span class="comment-time">${timeAgo(c.createdAt)}</span>
-          </a>
-          ${previewHtml ? `<div class="comment-body">${previewHtml}</div>` : ""}
-        </li>
-      `
-    })
-    .join("")
-}
-
-function renderAll(state: DiscussionState) {
-  rebuildHighlights(state)
-
-  const layer = ensureMarginLayer()
-  layer.innerHTML = ""
 
   const flat = flattenComments(state)
-  const unanchored: GiscusReply[] = []
   for (const c of flat) {
-    if (highlightRangesByCommentId.has(c.id)) {
-      layer.appendChild(buildCard(c))
-    } else {
-      unanchored.push(c)
+    const li = document.createElement("li")
+    li.className = "comment-sidebar-item"
+    if (c.isReply) {
+      li.style.marginLeft = "1.5rem"
+      li.style.borderLeftColor = "var(--tertiary)"
+      li.style.opacity = "0.9"
     }
-  }
 
-  renderUnanchored(unanchored, state.totalCommentCount)
-  scheduleLayout()
-  setTimeout(scheduleLayout, 250)
-  setTimeout(scheduleLayout, 1200)
+    if (highlightRangesByCommentId.has(c.id)) {
+      li.classList.add("anchored")
+    }
+    
+    const { previewHtml } = parseBodyHtml(c.bodyHTML)
+    
+    li.innerHTML = `
+      <div class="comment-author">
+        <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
+        <a class="comment-author-name" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">${escapeHtml(c.author.login)}</a>
+        <span class="comment-time">${timeAgo(c.createdAt)}</span>
+      </div>
+      ${previewHtml ? `<div class="comment-body">${previewHtml}</div>` : ""}
+    `
+
+    if (highlightRangesByCommentId.has(c.id)) {
+      li.style.cursor = "pointer"
+      li.addEventListener("mouseenter", () => applyHighlights(c.id))
+      li.addEventListener("mouseleave", () => applyHighlights())
+      li.addEventListener("click", (ev) => {
+        if ((ev.target as HTMLElement).closest("a")) return
+        scrollToFirstHighlightFor(c.id)
+      })
+    }
+
+    list.appendChild(li)
+  }
 }
 
 function scrollToFirstHighlightFor(commentId: string) {
@@ -486,7 +418,6 @@ async function fetchDiscussion(): Promise<GiscusApiResponse | null> {
   inflightFetch?.abort()
   inflightFetch = new AbortController()
   try {
-    // Use corsproxy.io to bypass Giscus CORS restrictions
     const targetUrl = encodeURIComponent(`https://giscus.app/api/discussions?${params.toString()}`)
     const res = await fetch(`https://corsproxy.io/?${targetUrl}`, {
       signal: inflightFetch.signal,
@@ -504,9 +435,7 @@ async function refresh(force = false) {
   const now = Date.now()
   if (!force && now - lastFetchAt < 1500) return
   lastFetchAt = now
-  console.log("[CommentSidebar] refresh()")
   const data = await fetchDiscussion()
-  console.log("[CommentSidebar] fetched:", data)
   if (!data) {
     const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
     if (list) {
@@ -519,28 +448,22 @@ async function refresh(force = false) {
     totalCommentCount: data.discussion?.totalCommentCount ?? comments.length,
     comments,
   }
-  console.log("[CommentSidebar] state:", lastDiscussionState)
   renderAll(lastDiscussionState)
 }
 
 document.addEventListener("nav", () => {
-  console.log("[CommentSidebar] nav handler firing")
   const sidebar = document.querySelector(".comment-sidebar") as HTMLElement | null
   if (!sidebar) {
-    console.log("[CommentSidebar] no .comment-sidebar in DOM")
     return
   }
 
   if (!document.querySelector(".giscus")) {
-    console.log("[CommentSidebar] no .giscus container; hiding sidebar")
     sidebar.style.display = "none"
     return
   }
 
   const cleanups: Array<() => void> = []
 
-  // Fetch immediately, plus when Giscus posts a metadata update
-  // (which happens when comments/reactions/replies change).
   refresh(true)
 
   const onMessage = (event: MessageEvent) => {
@@ -552,26 +475,10 @@ document.addEventListener("nav", () => {
 
   setupSelectionUI(cleanups)
 
-  const onResize = () => scheduleLayout()
-  window.addEventListener("resize", onResize)
-  window.addEventListener("scroll", scheduleLayout, { passive: true })
-  cleanups.push(() => {
-    window.removeEventListener("resize", onResize)
-    window.removeEventListener("scroll", scheduleLayout)
-  })
-
-  const article = document.querySelector(ARTICLE_SELECTOR)
-  if (article && "ResizeObserver" in window) {
-    const ro = new ResizeObserver(() => scheduleLayout())
-    ro.observe(article)
-    cleanups.push(() => ro.disconnect())
-  }
-
   if (lastDiscussionState) renderAll(lastDiscussionState)
+
   ;(window as unknown as { addCleanup: (fn: () => void) => void }).addCleanup(() => {
     cleanups.forEach((fn) => fn())
     inflightFetch?.abort()
-    const layer = document.getElementById(MARGIN_LAYER_ID)
-    layer?.remove()
   })
 })

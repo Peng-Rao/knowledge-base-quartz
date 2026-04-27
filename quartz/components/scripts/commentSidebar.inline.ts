@@ -19,8 +19,12 @@ interface GiscusComment extends GiscusReply {
 }
 
 interface GiscusApiResponse {
-  discussion: { id: string; url: string; totalCommentCount: number }
-  comments: GiscusComment[]
+  discussion: {
+    id: string
+    url: string
+    totalCommentCount: number
+    comments: GiscusComment[]
+  }
   message?: string
 }
 
@@ -501,9 +505,10 @@ async function refresh(force = false) {
   lastFetchAt = now
   const data = await fetchDiscussion()
   if (!data) return
+  const comments = data.discussion?.comments ?? []
   lastDiscussionState = {
-    totalCommentCount: data.discussion?.totalCommentCount ?? data.comments?.length ?? 0,
-    comments: data.comments ?? [],
+    totalCommentCount: data.discussion?.totalCommentCount ?? comments.length,
+    comments,
   }
   renderAll(lastDiscussionState)
 }

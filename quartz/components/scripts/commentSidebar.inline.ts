@@ -322,14 +322,8 @@ function layoutSidebarCards() {
   const GAP = 12
   let cursor = 0
 
-  const toc = rightSidebar.querySelector(".toc") as HTMLElement | null
-  if (toc) {
-    cursor = toc.offsetHeight + 32
-  }
-
   for (const t of targets) {
     if (t.top === 9999999) continue
-
     const desired = Math.max(t.top, cursor)
     t.card.style.top = `${desired}px`
     t.card.style.position = "absolute"

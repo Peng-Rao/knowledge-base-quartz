@@ -6,15 +6,6 @@
   position: relative !important;
   height: 100% !important;
   align-self: stretch;
-
-  & > .toc {
-    position: sticky;
-    top: 2rem;
-    z-index: 10;
-    // Add a subtle fade or solid background if you want to obscure comments scrolling underneath
-    background: var(--light);
-    padding-bottom: 1rem;
-  }
 }
 
 .comment-sidebar {

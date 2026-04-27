@@ -1,3 +1,5 @@
+export {}
+
 interface GiscusUser {
   login: string
   avatarUrl: string
@@ -23,27 +25,21 @@ interface GiscusDiscussion {
   totalReplyCount: number
 }
 
-interface GiscusMetadata {
-  discussion: GiscusDiscussion
-  viewer: GiscusUser
-}
-
 interface GiscusDiscussionData {
   discussion: GiscusDiscussion
   comments: GiscusComment[]
-  // older shape compatibility
-  totalCommentCount?: number
 }
-
-export {}
 
 const ARTICLE_SELECTOR = "article"
 const SIDEBAR_LIST_SELECTOR = ".comment-sidebar-list"
+const MARGIN_LAYER_ID = "comment-margin-layer"
 const HIGHLIGHT_NAME = "comment-anchor"
+const HIGHLIGHT_ACTIVE = "comment-anchor-active"
 const QUOTE_LINE = /^>\s?(.*)$/
 
 let lastDiscussionData: GiscusDiscussionData | null = null
-let highlightRangesByCommentId: Map<string, Range[]> = new Map()
+const highlightRangesByCommentId: Map<string, Range[]> = new Map()
+let resizeRaf: number | null = null
 
 function escapeHtml(s: string): string {
   return s
@@ -91,7 +87,7 @@ function extractQuotedSpans(body: string): string[] {
   return out
 }
 
-function bodyPreview(body: string, max = 240): string {
+function bodyPreview(body: string, max = 280): string {
   const stripped = body
     .split("\n")
     .filter((l) => !l.startsWith(">"))
@@ -111,49 +107,6 @@ function flattenComments(data: GiscusDiscussionData): GiscusReply[] {
   return out
 }
 
-function renderComment(c: GiscusReply): string {
-  const preview = bodyPreview(c.body)
-  const quotes = extractQuotedSpans(c.body)
-  const quotesHtml = quotes
-    .map((q) => `<blockquote class="comment-quote">${escapeHtml(q)}</blockquote>`)
-    .join("")
-  return `
-    <li class="comment-sidebar-item" data-comment-id="${escapeHtml(c.id)}">
-      <a class="comment-author" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">
-        <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
-        <span class="comment-author-name">${escapeHtml(c.author.login)}</span>
-        <span class="comment-time">${timeAgo(c.createdAt)}</span>
-      </a>
-      ${quotesHtml}
-      ${preview ? `<p class="comment-body">${escapeHtml(preview)}</p>` : ""}
-    </li>
-  `
-}
-
-function renderSidebar(data: GiscusDiscussionData) {
-  const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
-  if (!list) return
-  const flat = flattenComments(data)
-  if (flat.length === 0) {
-    list.innerHTML =
-      '<li class="comment-sidebar-empty">No comments yet. Select text or scroll down to start the conversation.</li>'
-    list.setAttribute("data-empty", "true")
-    return
-  }
-  list.innerHTML = flat.map(renderComment).join("")
-  list.removeAttribute("data-empty")
-
-  list.querySelectorAll(".comment-sidebar-item").forEach((el) => {
-    el.addEventListener("click", (ev) => {
-      const target = ev.target as HTMLElement
-      if (target.closest("a")) return
-      const id = (el as HTMLElement).dataset.commentId
-      if (!id) return
-      scrollToFirstHighlightFor(id)
-    })
-  })
-}
-
 function findTextRanges(root: Element, target: string): Range[] {
   const ranges: Range[] = []
   if (!target) return ranges
@@ -164,7 +117,7 @@ function findTextRanges(root: Element, target: string): Range[] {
     acceptNode(node: Node) {
       const parent = (node as Text).parentElement
       if (!parent) return NodeFilter.FILTER_REJECT
-      if (parent.closest(".comment-sidebar, .giscus, pre, code, script, style")) {
+      if (parent.closest(".comment-sidebar, .giscus, pre, code, script, style, .comment-margin-card")) {
         return NodeFilter.FILTER_REJECT
       }
       return NodeFilter.FILTER_ACCEPT
@@ -202,18 +155,172 @@ function rebuildHighlights(data: GiscusDiscussionData) {
   applyHighlights()
 }
 
-function applyHighlights() {
-  if (typeof CSS === "undefined" || !("highlights" in CSS)) return
-  ;(CSS.highlights as Map<string, unknown>).delete(HIGHLIGHT_NAME)
+function applyHighlights(activeCommentId?: string) {
+  const cssAny = CSS as unknown as { highlights?: Map<string, unknown> }
+  if (!cssAny.highlights) return
+  cssAny.highlights.delete(HIGHLIGHT_NAME)
+  cssAny.highlights.delete(HIGHLIGHT_ACTIVE)
+
   const all: Range[] = []
-  for (const ranges of highlightRangesByCommentId.values()) all.push(...ranges)
-  if (all.length === 0) return
-  try {
-    const hl = new (window as any).Highlight(...all)
-    ;(CSS.highlights as Map<string, unknown>).set(HIGHLIGHT_NAME, hl)
-  } catch {
-    // CSS Custom Highlight API not available; skip silently
+  const active: Range[] = []
+  for (const [id, ranges] of highlightRangesByCommentId.entries()) {
+    if (activeCommentId && id === activeCommentId) {
+      active.push(...ranges)
+    } else {
+      all.push(...ranges)
+    }
   }
+  try {
+    const Ctor = (window as unknown as { Highlight: new (...r: Range[]) => unknown }).Highlight
+    if (all.length > 0) cssAny.highlights.set(HIGHLIGHT_NAME, new Ctor(...all))
+    if (active.length > 0) cssAny.highlights.set(HIGHLIGHT_ACTIVE, new Ctor(...active))
+  } catch {
+    /* ignore */
+  }
+}
+
+function ensureMarginLayer(): HTMLElement {
+  let layer = document.getElementById(MARGIN_LAYER_ID) as HTMLElement | null
+  if (!layer) {
+    layer = document.createElement("div")
+    layer.id = MARGIN_LAYER_ID
+    layer.className = "comment-margin-layer"
+    document.body.appendChild(layer)
+  }
+  return layer
+}
+
+function renderCardInner(c: GiscusReply): string {
+  const preview = bodyPreview(c.body)
+  return `
+    <a class="comment-margin-author" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">
+      <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
+      <span class="comment-margin-name">${escapeHtml(c.author.login)}</span>
+      <span class="comment-margin-time">${timeAgo(c.createdAt)}</span>
+    </a>
+    ${preview ? `<p class="comment-margin-body">${escapeHtml(preview)}</p>` : ""}
+  `
+}
+
+function buildCard(c: GiscusReply): HTMLElement {
+  const card = document.createElement("div")
+  card.className = "comment-margin-card"
+  card.dataset.commentId = c.id
+  card.innerHTML = renderCardInner(c)
+  card.addEventListener("mouseenter", () => applyHighlights(c.id))
+  card.addEventListener("mouseleave", () => applyHighlights())
+  card.addEventListener("click", (ev) => {
+    if ((ev.target as HTMLElement).closest("a")) return
+    scrollToFirstHighlightFor(c.id)
+  })
+  return card
+}
+
+function layoutMarginCards() {
+  const layer = document.getElementById(MARGIN_LAYER_ID)
+  if (!layer) return
+  const article = document.querySelector(ARTICLE_SELECTOR) as HTMLElement | null
+  if (!article) return
+
+  const articleRect = article.getBoundingClientRect()
+  const layerLeft = articleRect.right + window.scrollX + 24
+  const available = window.innerWidth - (articleRect.right + 24) - 16
+  const width = Math.max(220, Math.min(320, available))
+
+  if (available < 220) {
+    layer.style.display = "none"
+    return
+  }
+  layer.style.display = ""
+  layer.style.left = `${layerLeft}px`
+  layer.style.width = `${width}px`
+
+  // Order cards by their target Y; stack to avoid overlap.
+  const cards = Array.from(layer.querySelectorAll<HTMLElement>(".comment-margin-card"))
+  const targets: { card: HTMLElement; top: number }[] = []
+  for (const card of cards) {
+    const id = card.dataset.commentId
+    if (!id) continue
+    const ranges = highlightRangesByCommentId.get(id)
+    if (!ranges || ranges.length === 0) {
+      card.style.display = "none"
+      continue
+    }
+    card.style.display = ""
+    const rect = ranges[0].getBoundingClientRect()
+    targets.push({ card, top: rect.top + window.scrollY })
+  }
+  targets.sort((a, b) => a.top - b.top)
+
+  const GAP = 8
+  let cursor = -Infinity
+  for (const t of targets) {
+    const desired = Math.max(t.top, cursor + GAP)
+    t.card.style.top = `${desired}px`
+    // After layout, advance cursor by actual height
+    cursor = desired + t.card.offsetHeight
+  }
+}
+
+function scheduleLayout() {
+  if (resizeRaf !== null) return
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = null
+    layoutMarginCards()
+  })
+}
+
+function renderUnanchored(unanchored: GiscusReply[]) {
+  const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
+  if (!list) return
+  if (unanchored.length === 0) {
+    list.innerHTML =
+      '<li class="comment-sidebar-empty">All comments are anchored to passages in the article.</li>'
+    list.setAttribute("data-empty", "true")
+    return
+  }
+  list.removeAttribute("data-empty")
+  list.innerHTML = unanchored
+    .map(
+      (c) => `
+        <li class="comment-sidebar-item">
+          <a class="comment-author" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">
+            <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
+            <span class="comment-author-name">${escapeHtml(c.author.login)}</span>
+            <span class="comment-time">${timeAgo(c.createdAt)}</span>
+          </a>
+          ${(() => {
+            const p = bodyPreview(c.body, 200)
+            return p ? `<p class="comment-body">${escapeHtml(p)}</p>` : ""
+          })()}
+        </li>
+      `,
+    )
+    .join("")
+}
+
+function renderAll(data: GiscusDiscussionData) {
+  rebuildHighlights(data)
+
+  const layer = ensureMarginLayer()
+  layer.innerHTML = ""
+
+  const flat = flattenComments(data)
+  const unanchored: GiscusReply[] = []
+  for (const c of flat) {
+    if (highlightRangesByCommentId.has(c.id)) {
+      layer.appendChild(buildCard(c))
+    } else {
+      unanchored.push(c)
+    }
+  }
+
+  renderUnanchored(unanchored)
+  // Wait for images so heights are stable, then place
+  scheduleLayout()
+  // Two extra layout passes once images load
+  setTimeout(scheduleLayout, 250)
+  setTimeout(scheduleLayout, 1200)
 }
 
 function scrollToFirstHighlightFor(commentId: string) {
@@ -249,18 +356,15 @@ function quoteSelectionAndScroll() {
       .map((l) => `> ${l}`)
       .join("\n") + "\n\n"
 
-  const writeAndToast = () => {
+  const finish = () => {
     const giscus = document.querySelector(".giscus")
-    if (giscus) {
-      giscus.scrollIntoView({ behavior: "smooth", block: "start" })
-    }
+    if (giscus) giscus.scrollIntoView({ behavior: "smooth", block: "start" })
     showToast("Quote copied. Paste it into the comment box below (⌘/Ctrl + V).")
   }
 
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(quoted).then(writeAndToast).catch(writeAndToast)
+    navigator.clipboard.writeText(quoted).then(finish).catch(finish)
   } else {
-    // Fallback: temporary textarea
     const ta = document.createElement("textarea")
     ta.value = quoted
     ta.style.position = "fixed"
@@ -273,7 +377,7 @@ function quoteSelectionAndScroll() {
       /* ignore */
     }
     ta.remove()
-    writeAndToast()
+    finish()
   }
 }
 
@@ -356,7 +460,6 @@ document.addEventListener("nav", () => {
   const sidebar = document.querySelector(".comment-sidebar") as HTMLElement | null
   if (!sidebar) return
 
-  // If the page disables comments (no .giscus container present), hide the sidebar.
   if (!document.querySelector(".giscus")) {
     sidebar.style.display = "none"
     return
@@ -366,22 +469,15 @@ document.addEventListener("nav", () => {
 
   const onMessage = (event: MessageEvent) => {
     if (!isGiscusMessage(event)) return
-    const payload = (event.data as any).giscus
-    // Discussion payload shape: { discussion: {...}, comments: [...] } via emit-metadata
-    if (payload?.discussion && Array.isArray(payload?.comments)) {
-      lastDiscussionData = payload as GiscusDiscussionData
-      renderSidebar(lastDiscussionData)
-      rebuildHighlights(lastDiscussionData)
-      return
-    }
-    // Older / metadata-only payload: { discussion, viewer } — render header counts only
-    if (payload?.discussion && payload?.viewer) {
-      const meta = payload as GiscusMetadata
-      const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
-      if (list && list.getAttribute("data-empty") === "true" && meta.discussion.totalCommentCount === 0) {
-        list.innerHTML =
-          '<li class="comment-sidebar-empty">No comments yet. Select text or scroll down to start the conversation.</li>'
+    const payload = (event.data as { giscus?: unknown }).giscus as
+      | { discussion?: GiscusDiscussion; comments?: GiscusComment[] }
+      | undefined
+    if (payload?.discussion && Array.isArray(payload.comments)) {
+      lastDiscussionData = {
+        discussion: payload.discussion,
+        comments: payload.comments,
       }
+      renderAll(lastDiscussionData)
     }
   }
 
@@ -390,12 +486,26 @@ document.addEventListener("nav", () => {
 
   setupSelectionUI(cleanups)
 
-  if (lastDiscussionData) {
-    renderSidebar(lastDiscussionData)
-    rebuildHighlights(lastDiscussionData)
+  const onResize = () => scheduleLayout()
+  window.addEventListener("resize", onResize)
+  window.addEventListener("scroll", scheduleLayout, { passive: true })
+  cleanups.push(() => {
+    window.removeEventListener("resize", onResize)
+    window.removeEventListener("scroll", scheduleLayout)
+  })
+
+  const article = document.querySelector(ARTICLE_SELECTOR)
+  if (article && "ResizeObserver" in window) {
+    const ro = new ResizeObserver(() => scheduleLayout())
+    ro.observe(article)
+    cleanups.push(() => ro.disconnect())
   }
 
-  window.addCleanup(() => {
+  if (lastDiscussionData) renderAll(lastDiscussionData)
+
+  ;(window as unknown as { addCleanup: (fn: () => void) => void }).addCleanup(() => {
     cleanups.forEach((fn) => fn())
+    const layer = document.getElementById(MARGIN_LAYER_ID)
+    layer?.remove()
   })
 })

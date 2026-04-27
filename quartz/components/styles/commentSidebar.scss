@@ -18,7 +18,7 @@
     list-style: none;
     padding: 0;
     margin: 0;
-    max-height: 60vh;
+    max-height: 50vh;
     overflow-y: auto;
     overscroll-behavior: contain;
 
@@ -33,7 +33,6 @@
       padding: 0.5rem 0.75rem;
       margin-bottom: 0.5rem;
       font-size: 0.8rem;
-      cursor: pointer;
       transition: background 0.15s ease, border-color 0.15s ease;
 
       &:hover {
@@ -72,23 +71,80 @@
         }
       }
 
-      .comment-quote {
-        margin: 0.25rem 0;
-        padding: 0.25rem 0.5rem;
-        border-left: 2px solid var(--tertiary);
-        background: var(--lightgray);
-        color: var(--darkgray);
-        font-style: italic;
-        font-size: 0.75rem;
-        line-height: 1.3;
-      }
-
       .comment-body {
         margin: 0.25rem 0 0;
         color: var(--darkgray);
         line-height: 1.4;
       }
     }
+  }
+}
+
+// Body-level layer that hosts margin-anchored comment cards.
+// Cards are absolutely positioned (page coords) so they scroll with the article.
+.comment-margin-layer {
+  position: absolute;
+  top: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.comment-margin-card {
+  pointer-events: auto;
+  position: absolute;
+  width: 100%;
+  background: var(--light);
+  border: 1px solid var(--lightgray);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease,
+    top 0.2s ease;
+
+  &:hover {
+    border-color: var(--secondary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  .comment-margin-author {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.25rem;
+    text-decoration: none;
+    color: var(--dark);
+
+    &:hover {
+      color: var(--secondary);
+    }
+
+    img {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .comment-margin-name {
+      font-weight: 600;
+    }
+
+    .comment-margin-time {
+      margin-left: auto;
+      color: var(--gray);
+      font-size: 0.7rem;
+      font-weight: normal;
+    }
+  }
+
+  .comment-margin-body {
+    margin: 0;
+    color: var(--darkgray);
+    line-height: 1.45;
+    white-space: normal;
+    word-break: break-word;
   }
 }
 
@@ -138,4 +194,9 @@
 ::highlight(comment-anchor) {
   background-color: var(--textHighlight);
   color: inherit;
+}
+
+::highlight(comment-anchor-active) {
+  background-color: var(--tertiary);
+  color: var(--light);
 }

@@ -8,7 +8,7 @@ import * as Plugin from "./quartz/plugins"
  */
 const config: QuartzConfig = {
   configuration: {
-    pageTitle: "Knowledge Base",
+    pageTitle: "brew upgrade",
     pageTitleSuffix: "",
     enableSPA: true,
     enablePopovers: true,

@@ -73,11 +73,48 @@ function parseBodyHtml(html: string): { quotes: string[]; previewHtml: string } 
   tpl.innerHTML = html
   const root = tpl.content
   const quotes: string[] = []
+
   root.querySelectorAll("blockquote").forEach((bq) => {
-    const text = (bq.textContent || "").replace(/\s+/g, " ").trim()
-    if (text.length >= 8) quotes.push(text)
+    let quoteText = ""
+
+    const pElements = Array.from(bq.querySelectorAll("p"))
+    if (pElements.length > 1) {
+      quoteText = pElements[0].textContent || ""
+      for (let i = 1; i < pElements.length; i++) {
+        bq.parentNode?.insertBefore(pElements[i].cloneNode(true), bq.nextSibling)
+      }
+    } else {
+      const br = bq.querySelector("br")
+      if (br && br.parentElement) {
+        const p = br.parentElement
+        let curr = p.firstChild
+        while (curr && curr !== br) {
+          quoteText += curr.textContent || ""
+          curr = curr.nextSibling
+        }
+
+        const commentP = document.createElement("p")
+        curr = br.nextSibling
+        while (curr) {
+          const next = curr.nextSibling
+          commentP.appendChild(curr.cloneNode(true))
+          curr = next
+        }
+        if (commentP.childNodes.length > 0) {
+          bq.parentNode?.insertBefore(commentP, bq.nextSibling)
+        }
+      } else {
+        quoteText = bq.textContent || ""
+      }
+    }
+
+    const cleanQuote = quoteText.replace(/\s+/g, " ").trim()
+    if (cleanQuote.length >= 4) {
+      quotes.push(cleanQuote)
+    }
     bq.remove()
   })
+
   return { quotes, previewHtml: tpl.innerHTML.trim() }
 }
 
@@ -95,33 +132,50 @@ function flattenComments(state: DiscussionState): (GiscusReply & { isReply?: boo
 function findTextRanges(root: Element, target: string): Range[] {
   const ranges: Range[] = []
   if (!target) return ranges
-  const needle = target.replace(/\s+/g, " ").trim().toLowerCase()
-  if (needle.length < 8) return ranges
+  const needleNoSpaces = target.replace(/\s+/g, "").toLowerCase()
+  if (needleNoSpaces.length < 4) return ranges
 
+  const charMap: { node: Text; offset: number; char: string }[] = []
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node: Node) {
       const parent = (node as Text).parentElement
       if (!parent) return NodeFilter.FILTER_REJECT
-      if (parent.closest(".comment-sidebar, .giscus, pre, code, script, style")) {
+      if (parent.closest(".comment-sidebar, .giscus, script, style")) {
         return NodeFilter.FILTER_REJECT
       }
       return NodeFilter.FILTER_ACCEPT
     },
   })
+
   let node: Text | null
   while ((node = walker.nextNode() as Text | null)) {
-    const text = (node.textContent || "").toLowerCase()
-    let from = 0
-    while (true) {
-      const idx = text.indexOf(needle, from)
-      if (idx < 0) break
-      const range = document.createRange()
-      range.setStart(node, idx)
-      range.setEnd(node, idx + needle.length)
-      ranges.push(range)
-      from = idx + needle.length
+    const text = node.textContent || ""
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i]
+      if (!/\s/.test(c)) {
+        charMap.push({ node, offset: i, char: c.toLowerCase() })
+      }
     }
   }
+
+  const fullText = charMap.map((c) => c.char).join("")
+
+  let from = 0
+  while (true) {
+    const idx = fullText.indexOf(needleNoSpaces, from)
+    if (idx < 0) break
+
+    const startMap = charMap[idx]
+    const endMap = charMap[idx + needleNoSpaces.length - 1]
+
+    const range = document.createRange()
+    range.setStart(startMap.node, startMap.offset)
+    range.setEnd(endMap.node, endMap.offset + 1)
+    ranges.push(range)
+
+    from = idx + needleNoSpaces.length
+  }
+
   return ranges
 }
 
@@ -129,14 +183,14 @@ function rebuildHighlights(state: DiscussionState) {
   highlightRangesByCommentId.clear()
   const article = document.querySelector(ARTICLE_SELECTOR)
   if (!article) return
-  
+
   for (const c of state.comments ?? []) {
     const { quotes } = parseBodyHtml(c.bodyHTML)
     const ranges: Range[] = []
     for (const q of quotes) {
       ranges.push(...findTextRanges(article, q))
     }
-    
+
     if (ranges.length > 0) {
       highlightRangesByCommentId.set(c.id, ranges)
       for (const r of c.replies ?? []) {
@@ -202,18 +256,18 @@ function getCommentIdFromPoint(x: number, y: number): string | null {
 }
 
 function highlightSidebarItem(id: string) {
-  document.querySelectorAll('.comment-sidebar-item').forEach((el) => {
+  document.querySelectorAll(".comment-sidebar-item").forEach((el) => {
     if ((el as HTMLElement).dataset.commentId === id) {
-      el.classList.add('active-comment')
+      el.classList.add("active-comment")
     } else {
-      el.classList.remove('active-comment')
+      el.classList.remove("active-comment")
     }
   })
 }
 
 function unhighlightSidebarItems() {
-  document.querySelectorAll('.comment-sidebar-item').forEach((el) => {
-    el.classList.remove('active-comment')
+  document.querySelectorAll(".comment-sidebar-item").forEach((el) => {
+    el.classList.remove("active-comment")
   })
 }
 
@@ -233,7 +287,9 @@ function scrollToSidebarItem(id: string, smooth = true) {
       top: el.offsetTop - list.offsetTop - list.clientHeight / 2 + el.clientHeight / 2,
       behavior: smooth ? "smooth" : "auto",
     })
-    setTimeout(() => { isAutoScrollingList = false }, 500)
+    setTimeout(() => {
+      isAutoScrollingList = false
+    }, 500)
   }
 }
 
@@ -268,9 +324,9 @@ function renderAll(state: DiscussionState) {
     if (highlightRangesByCommentId.has(c.id)) {
       li.classList.add("anchored")
     }
-    
+
     const { previewHtml } = parseBodyHtml(c.bodyHTML)
-    
+
     li.innerHTML = `
       <div class="comment-author">
         <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
@@ -612,7 +668,6 @@ document.addEventListener("nav", () => {
   setupScrollSync(cleanups)
 
   if (lastDiscussionState) renderAll(lastDiscussionState)
-
   ;(window as unknown as { addCleanup: (fn: () => void) => void }).addCleanup(() => {
     cleanups.forEach((fn) => fn())
     inflightFetch?.abort()

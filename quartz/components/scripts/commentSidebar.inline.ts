@@ -9,7 +9,7 @@ interface GiscusUser {
 interface GiscusReply {
   id: string
   author: GiscusUser
-  body: string
+  bodyHTML: string
   createdAt: string
   url: string
 }
@@ -18,15 +18,14 @@ interface GiscusComment extends GiscusReply {
   replies: GiscusReply[]
 }
 
-interface GiscusDiscussion {
-  id: string
-  url: string
-  totalCommentCount: number
-  totalReplyCount: number
+interface GiscusApiResponse {
+  discussion: { id: string; url: string; totalCommentCount: number }
+  comments: GiscusComment[]
+  message?: string
 }
 
-interface GiscusDiscussionData {
-  discussion: GiscusDiscussion
+interface DiscussionState {
+  totalCommentCount: number
   comments: GiscusComment[]
 }
 
@@ -35,11 +34,12 @@ const SIDEBAR_LIST_SELECTOR = ".comment-sidebar-list"
 const MARGIN_LAYER_ID = "comment-margin-layer"
 const HIGHLIGHT_NAME = "comment-anchor"
 const HIGHLIGHT_ACTIVE = "comment-anchor-active"
-const QUOTE_LINE = /^>\s?(.*)$/
 
-let lastDiscussionData: GiscusDiscussionData | null = null
+let lastDiscussionState: DiscussionState | null = null
 const highlightRangesByCommentId: Map<string, Range[]> = new Map()
 let resizeRaf: number | null = null
+let inflightFetch: AbortController | null = null
+let lastFetchAt = 0
 
 function escapeHtml(s: string): string {
   return s
@@ -66,41 +66,22 @@ function timeAgo(iso: string): string {
   return `${Math.round(mo / 12)}y ago`
 }
 
-function extractQuotedSpans(body: string): string[] {
-  const lines = body.replace(/\r\n/g, "\n").split("\n")
-  const out: string[] = []
-  let buf: string[] = []
-  for (const line of lines) {
-    const m = line.match(QUOTE_LINE)
-    if (m) {
-      buf.push(m[1])
-    } else if (buf.length > 0) {
-      const joined = buf.join(" ").replace(/\s+/g, " ").trim()
-      if (joined.length >= 8) out.push(joined)
-      buf = []
-    }
-  }
-  if (buf.length > 0) {
-    const joined = buf.join(" ").replace(/\s+/g, " ").trim()
-    if (joined.length >= 8) out.push(joined)
-  }
-  return out
+function parseBodyHtml(html: string): { quotes: string[]; previewHtml: string } {
+  const tpl = document.createElement("template")
+  tpl.innerHTML = html
+  const root = tpl.content
+  const quotes: string[] = []
+  root.querySelectorAll("blockquote").forEach((bq) => {
+    const text = (bq.textContent || "").replace(/\s+/g, " ").trim()
+    if (text.length >= 8) quotes.push(text)
+    bq.remove()
+  })
+  return { quotes, previewHtml: tpl.innerHTML.trim() }
 }
 
-function bodyPreview(body: string, max = 280): string {
-  const stripped = body
-    .split("\n")
-    .filter((l) => !l.startsWith(">"))
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim()
-  if (!stripped) return ""
-  return stripped.length > max ? stripped.slice(0, max - 1) + "…" : stripped
-}
-
-function flattenComments(data: GiscusDiscussionData): GiscusReply[] {
+function flattenComments(state: DiscussionState): GiscusReply[] {
   const out: GiscusReply[] = []
-  for (const c of data.comments ?? []) {
+  for (const c of state.comments ?? []) {
     out.push(c)
     for (const r of c.replies ?? []) out.push(r)
   }
@@ -140,12 +121,12 @@ function findTextRanges(root: Element, target: string): Range[] {
   return ranges
 }
 
-function rebuildHighlights(data: GiscusDiscussionData) {
+function rebuildHighlights(state: DiscussionState) {
   highlightRangesByCommentId.clear()
   const article = document.querySelector(ARTICLE_SELECTOR)
   if (!article) return
-  for (const c of flattenComments(data)) {
-    const quotes = extractQuotedSpans(c.body)
+  for (const c of flattenComments(state)) {
+    const { quotes } = parseBodyHtml(c.bodyHTML)
     const ranges: Range[] = []
     for (const q of quotes) {
       ranges.push(...findTextRanges(article, q))
@@ -191,14 +172,14 @@ function ensureMarginLayer(): HTMLElement {
 }
 
 function renderCardInner(c: GiscusReply): string {
-  const preview = bodyPreview(c.body)
+  const { previewHtml } = parseBodyHtml(c.bodyHTML)
   return `
     <a class="comment-margin-author" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">
       <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
       <span class="comment-margin-name">${escapeHtml(c.author.login)}</span>
       <span class="comment-margin-time">${timeAgo(c.createdAt)}</span>
     </a>
-    ${preview ? `<p class="comment-margin-body">${escapeHtml(preview)}</p>` : ""}
+    ${previewHtml ? `<div class="comment-margin-body">${previewHtml}</div>` : ""}
   `
 }
 
@@ -270,9 +251,15 @@ function scheduleLayout() {
   })
 }
 
-function renderUnanchored(unanchored: GiscusReply[]) {
+function renderUnanchored(unanchored: GiscusReply[], totalCount: number) {
   const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
   if (!list) return
+  if (totalCount === 0) {
+    list.innerHTML =
+      '<li class="comment-sidebar-empty">No comments yet. Select text on the page or scroll down to start the conversation.</li>'
+    list.setAttribute("data-empty", "true")
+    return
+  }
   if (unanchored.length === 0) {
     list.innerHTML =
       '<li class="comment-sidebar-empty">All comments are anchored to passages in the article.</li>'
@@ -282,30 +269,30 @@ function renderUnanchored(unanchored: GiscusReply[]) {
   list.removeAttribute("data-empty")
   list.innerHTML = unanchored
     .map(
-      (c) => `
+      (c) => {
+        const { previewHtml } = parseBodyHtml(c.bodyHTML)
+        return `
         <li class="comment-sidebar-item">
           <a class="comment-author" href="${escapeHtml(c.url)}" target="_blank" rel="noopener">
             <img src="${escapeHtml(c.author.avatarUrl)}" alt="" loading="lazy" />
             <span class="comment-author-name">${escapeHtml(c.author.login)}</span>
             <span class="comment-time">${timeAgo(c.createdAt)}</span>
           </a>
-          ${(() => {
-            const p = bodyPreview(c.body, 200)
-            return p ? `<p class="comment-body">${escapeHtml(p)}</p>` : ""
-          })()}
+          ${previewHtml ? `<div class="comment-body">${previewHtml}</div>` : ""}
         </li>
-      `,
+      `
+      },
     )
     .join("")
 }
 
-function renderAll(data: GiscusDiscussionData) {
-  rebuildHighlights(data)
+function renderAll(state: DiscussionState) {
+  rebuildHighlights(state)
 
   const layer = ensureMarginLayer()
   layer.innerHTML = ""
 
-  const flat = flattenComments(data)
+  const flat = flattenComments(state)
   const unanchored: GiscusReply[] = []
   for (const c of flat) {
     if (highlightRangesByCommentId.has(c.id)) {
@@ -315,10 +302,8 @@ function renderAll(data: GiscusDiscussionData) {
     }
   }
 
-  renderUnanchored(unanchored)
-  // Wait for images so heights are stable, then place
+  renderUnanchored(unanchored, state.totalCommentCount)
   scheduleLayout()
-  // Two extra layout passes once images load
   setTimeout(scheduleLayout, 250)
   setTimeout(scheduleLayout, 1200)
 }
@@ -456,6 +441,73 @@ function isGiscusMessage(event: MessageEvent): boolean {
   )
 }
 
+function buildGiscusTerm(giscus: HTMLElement): string {
+  const mapping = giscus.dataset.mapping || "url"
+  switch (mapping) {
+    case "pathname": {
+      let p = window.location.pathname
+      if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1)
+      if (p.toLowerCase().endsWith(".html")) p = p.slice(0, -5)
+      return p
+    }
+    case "url":
+      return window.location.origin + window.location.pathname
+    case "title":
+      return document.title
+    case "og:title": {
+      const og = document.querySelector('meta[property="og:title"]') as HTMLMetaElement | null
+      return og?.content || document.title
+    }
+    default:
+      return window.location.pathname
+  }
+}
+
+async function fetchDiscussion(): Promise<GiscusApiResponse | null> {
+  const giscus = document.querySelector(".giscus") as HTMLElement | null
+  if (!giscus) return null
+  const repo = giscus.dataset.repo
+  const categoryId = giscus.dataset.categoryId
+  if (!repo || !categoryId) return null
+
+  const params = new URLSearchParams({
+    repo,
+    term: buildGiscusTerm(giscus),
+    category: giscus.dataset.category || "",
+    category_id: categoryId,
+    strict: giscus.dataset.strict || "0",
+    backLink: window.location.href,
+  })
+
+  inflightFetch?.abort()
+  inflightFetch = new AbortController()
+  try {
+    const res = await fetch(`https://giscus.app/api/discussions?${params.toString()}`, {
+      signal: inflightFetch.signal,
+      credentials: "omit",
+    })
+    if (!res.ok) return null
+    return (await res.json()) as GiscusApiResponse
+  } catch {
+    return null
+  } finally {
+    inflightFetch = null
+  }
+}
+
+async function refresh(force = false) {
+  const now = Date.now()
+  if (!force && now - lastFetchAt < 1500) return
+  lastFetchAt = now
+  const data = await fetchDiscussion()
+  if (!data) return
+  lastDiscussionState = {
+    totalCommentCount: data.discussion?.totalCommentCount ?? data.comments?.length ?? 0,
+    comments: data.comments ?? [],
+  }
+  renderAll(lastDiscussionState)
+}
+
 document.addEventListener("nav", () => {
   const sidebar = document.querySelector(".comment-sidebar") as HTMLElement | null
   if (!sidebar) return
@@ -467,20 +519,14 @@ document.addEventListener("nav", () => {
 
   const cleanups: Array<() => void> = []
 
+  // Fetch immediately, plus when Giscus posts a metadata update
+  // (which happens when comments/reactions/replies change).
+  refresh(true)
+
   const onMessage = (event: MessageEvent) => {
     if (!isGiscusMessage(event)) return
-    const payload = (event.data as { giscus?: unknown }).giscus as
-      | { discussion?: GiscusDiscussion; comments?: GiscusComment[] }
-      | undefined
-    if (payload?.discussion && Array.isArray(payload.comments)) {
-      lastDiscussionData = {
-        discussion: payload.discussion,
-        comments: payload.comments,
-      }
-      renderAll(lastDiscussionData)
-    }
+    refresh()
   }
-
   window.addEventListener("message", onMessage)
   cleanups.push(() => window.removeEventListener("message", onMessage))
 
@@ -501,10 +547,11 @@ document.addEventListener("nav", () => {
     cleanups.push(() => ro.disconnect())
   }
 
-  if (lastDiscussionData) renderAll(lastDiscussionData)
+  if (lastDiscussionState) renderAll(lastDiscussionState)
 
   ;(window as unknown as { addCleanup: (fn: () => void) => void }).addCleanup(() => {
     cleanups.forEach((fn) => fn())
+    inflightFetch?.abort()
     const layer = document.getElementById(MARGIN_LAYER_ID)
     layer?.remove()
   })

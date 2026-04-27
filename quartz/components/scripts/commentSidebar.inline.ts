@@ -271,26 +271,82 @@ function unhighlightSidebarItems() {
   })
 }
 
-let isAutoScrollingList = false
+let resizeRaf: number | null = null
+function scheduleLayout() {
+  if (resizeRaf !== null) return
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = null
+    layoutSidebarCards()
+  })
+}
 
-function scrollToSidebarItem(id: string, smooth = true) {
-  const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement
-  const el = document.querySelector(`.comment-sidebar-item[data-comment-id="${id}"]`) as HTMLElement
-  if (!list || !el) return
+function layoutSidebarCards() {
+  const list = document.querySelector(SIDEBAR_LIST_SELECTOR) as HTMLElement | null
+  const article = document.querySelector(ARTICLE_SELECTOR) as HTMLElement | null
+  const rightSidebar = document.querySelector(".sidebar.right") as HTMLElement | null
+  if (!list || !article || !rightSidebar) return
+
+  const cards = Array.from(list.querySelectorAll<HTMLElement>(".comment-sidebar-item"))
+  const isDesktop = window.innerWidth >= 1200
+
+  if (!isDesktop) {
+    list.style.position = "relative"
+    list.style.minHeight = "auto"
+    for (const card of cards) {
+      card.style.position = "relative"
+      card.style.top = "auto"
+      card.style.marginBottom = "1rem"
+    }
+    return
+  }
+
+  list.style.position = "absolute"
 
   const listRect = list.getBoundingClientRect()
-  const elRect = el.getBoundingClientRect()
+  const targets: { card: HTMLElement; top: number }[] = []
 
-  if (smooth || elRect.top < listRect.top || elRect.bottom > listRect.bottom) {
-    isAutoScrollingList = true
-    list.scrollTo({
-      top: el.offsetTop - list.offsetTop - list.clientHeight / 2 + el.clientHeight / 2,
-      behavior: smooth ? "smooth" : "auto",
-    })
-    setTimeout(() => {
-      isAutoScrollingList = false
-    }, 500)
+  for (const card of cards) {
+    const id = card.dataset.commentId
+    if (!id) continue
+    const ranges = highlightRangesByCommentId.get(id)
+    if (!ranges || ranges.length === 0) {
+      targets.push({ card, top: 9999999 })
+      continue
+    }
+    const rect = ranges[0].getBoundingClientRect()
+    targets.push({ card, top: rect.top - listRect.top })
   }
+
+  targets.sort((a, b) => a.top - b.top)
+
+  const GAP = 12
+  let cursor = 0
+
+  const toc = rightSidebar.querySelector(".toc") as HTMLElement | null
+  if (toc) {
+    cursor = toc.offsetHeight + 32
+  }
+
+  for (const t of targets) {
+    if (t.top === 9999999) continue
+
+    const desired = Math.max(t.top, cursor)
+    t.card.style.top = `${desired}px`
+    t.card.style.position = "absolute"
+    cursor = desired + t.card.offsetHeight + GAP
+  }
+
+  let unanchoredCursor = cursor + 40
+
+  for (const t of targets) {
+    if (t.top === 9999999) {
+      t.card.style.top = `${unanchoredCursor}px`
+      t.card.style.position = "absolute"
+      unanchoredCursor += t.card.offsetHeight + GAP
+    }
+  }
+
+  list.style.minHeight = `${unanchoredCursor}px`
 }
 
 function renderAll(state: DiscussionState) {
@@ -305,6 +361,7 @@ function renderAll(state: DiscussionState) {
     list.innerHTML =
       '<li class="comment-sidebar-empty">No comments yet. Select text on the page or scroll down to start the conversation.</li>'
     list.setAttribute("data-empty", "true")
+    scheduleLayout()
     return
   }
 
@@ -354,6 +411,12 @@ function renderAll(state: DiscussionState) {
 
     list.appendChild(li)
   }
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      scheduleLayout()
+    })
+  })
 }
 
 function scrollToFirstHighlightFor(commentId: string) {
@@ -505,7 +568,15 @@ function setupArticleInteractions(cleanups: Array<() => void>) {
   const onClick = (e: MouseEvent) => {
     const id = getCommentIdFromPoint(e.clientX, e.clientY)
     if (id) {
-      scrollToSidebarItem(id, true)
+      const card = document.querySelector(
+        `.comment-sidebar-item[data-comment-id="${id}"]`,
+      ) as HTMLElement
+      if (card) {
+        const cardRect = card.getBoundingClientRect()
+        if (cardRect.top < 0 || cardRect.bottom > window.innerHeight) {
+          card.scrollIntoView({ behavior: "smooth", block: "center" })
+        }
+      }
     }
   }
 
@@ -515,46 +586,6 @@ function setupArticleInteractions(cleanups: Array<() => void>) {
   cleanups.push(() => {
     article.removeEventListener("mousemove", onMouseMove)
     article.removeEventListener("click", onClick)
-  })
-}
-
-function setupScrollSync(cleanups: Array<() => void>) {
-  let scrollRaf: number | null = null
-
-  const onScroll = () => {
-    if (isAutoScrollingList) return
-
-    if (scrollRaf !== null) return
-    scrollRaf = requestAnimationFrame(() => {
-      scrollRaf = null
-
-      const centerY = window.innerHeight / 3
-      let closestId: string | null = null
-      let minDistance = Infinity
-
-      for (const [id, ranges] of highlightRangesByCommentId.entries()) {
-        for (const r of ranges) {
-          const rect = r.getBoundingClientRect()
-          if (rect.bottom > 0 && rect.top < window.innerHeight) {
-            const distance = Math.abs(rect.top - centerY)
-            if (distance < minDistance) {
-              minDistance = distance
-              closestId = id
-            }
-          }
-        }
-      }
-
-      if (closestId) {
-        scrollToSidebarItem(closestId, false)
-      }
-    })
-  }
-
-  window.addEventListener("scroll", onScroll, { passive: true })
-  cleanups.push(() => {
-    window.removeEventListener("scroll", onScroll)
-    if (scrollRaf !== null) cancelAnimationFrame(scrollRaf)
   })
 }
 
@@ -665,9 +696,12 @@ document.addEventListener("nav", () => {
 
   setupSelectionUI(cleanups)
   setupArticleInteractions(cleanups)
-  setupScrollSync(cleanups)
 
   if (lastDiscussionState) renderAll(lastDiscussionState)
+
+  const ro = new ResizeObserver(() => scheduleLayout())
+  ro.observe(document.body)
+  cleanups.push(() => ro.disconnect())
   ;(window as unknown as { addCleanup: (fn: () => void) => void }).addCleanup(() => {
     cleanups.forEach((fn) => fn())
     inflightFetch?.abort()

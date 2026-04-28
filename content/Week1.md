@@ -1,8 +1,17 @@
-## What are Knowledge Graphs
+# What are Knowledge Graphs
 
 A **Knowledge Graph** is a graph-structured representation of real-world entities and the relationships between them, intended to accumulate and convey knowledge that can be queried, reasoned over, and continuously enriched.
 
-### The three things a KG must do
+This summary sits between the two definitions every survey cites:
+
+| Source                     | Definition                                                                                                                                                                              | Emphasis                                                                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Hogan et al. (2021)**    | "A graph of data intended to accumulate and convey knowledge of the real world, whose nodes represent entities of interest and whose edges represent relations between these entities." | *Inclusive* — anything graph-shaped that captures real-world knowledge counts. |
+| **Ehrlinger & Wöß (2016)** | "A knowledge graph acquires and integrates information into an ontology and applies a reasoner to derive new knowledge."                                                                | *Strict* — without an ontology + reasoner, it is just a data graph.            |
+
+There is no single agreed definition. The Hogan view dominates modern industrial usage (Google, Microsoft GraphRAG, enterprise data fabrics); the Ehrlinger–Wöß view dominates the Semantic-Web research tradition (DBpedia, YAGO, Wikidata). **I tend to adopts the Hogan definition as its baseline** — because the empirical evaluation will compare a small-LLM (SLM) retrieving from a _graph_ of curated facts against the same SLM retrieving from unstructured text.
+
+## The three things a KG must do
 
  Every KG in practice combines three capabilities:
  
@@ -31,7 +40,7 @@ graph TD
 ```
 
 
-### The four types Knowledge Graph
+## The four types Knowledge Graph
 
 **Encyclopedic Knowledge Graphs**
 
@@ -55,57 +64,10 @@ graph TD
 
 - **Purpose:** Represent facts across multiple modalities, breaking away from conventional text-only data.
 - **Characteristics:** They incorporate non-textual information like images, sounds, and videos alongside text. This makes them highly useful for multi-modal tasks like image-text matching, visual question answering, and recommendation systems.
-- **Examples:** IMGpedia, MMKG, and Richpedia.
-
-### The two competing data models
-
-There are two popular **Knowledge Graph Data Models**:
-
-|                     | RDF triples                             | Property Graph (LPG)                           |
-| ------------------- | --------------------------------------- | ---------------------------------------------- |
-| **Atom**            | `(subject, predicate, object)` triple   | Node *with* properties; edge *with* properties |
-| **Identity**        | Global IRIs                             | Local internal IDs                             |
-| **Schema**          | Optional, separate (RDFS/OWL)           | Optional, often inline (labels)                |
-| **Standard query**  | SPARQL                                  | Cypher / GQL / Gremlin                         |
-| **Strength**        | Web-scale interop, formal semantics     | Ergonomics, traversal performance              |
-| **Weakness**        | Verbose, awkward for n-ary relations    | No standard semantics, weaker reasoning        |
-| **Reference impl.** | Apache Jena, GraphDB, Stardog, Virtuoso | Neo4j, TigerGraph, Memgraph                    |
-
-Every RDF fact has exactly three positions. The picture below shows how `Alice worksAt Acme` decomposes, what each position is allowed to be, and how the same fact looks as a subgraph.
-
-```mermaid
-graph LR
-    S["<b>Subject</b><br/>:alice<br/>(IRI or blank node)"]:::sub
-    P{{"<b>Predicate</b><br/>:worksAt<br/>(always an IRI)"}}:::pred
-    O["<b>Object</b><br/>:acme<br/>(IRI, blank node, or literal)"]:::obj
-    S -->|edge labelled by P| O
-    P -.-|labels| S
-
-    classDef sub fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
-    classDef pred fill:#fef3c7,stroke:#a16207,color:#713f12
-    classDef obj fill:#dcfce7,stroke:#15803d,color:#14532d
-```
-
-In RDF, attributes (`name`, `bornIn`) become extra triples; in LPG they live on the node as key-value properties. The same is true for _edge_ attributes — RDF must reify them, LPG attaches them inline.
-
-```mermaid
-graph TB
-    subgraph RDF["RDF (triple-based) view"]
-        A1((":alice")) -- ":worksAt" --> B1((":acme"))
-        A1 -- ":hasName" --> N1["'Alice Smith'"]
-        A1 -- ":bornIn" --> Y1["1990"]
-    end
-
-    subgraph LPG["Property Graph view"]
-        A2(("Alice<br/><i>:Person</i><br/>name='Alice Smith'<br/>bornIn=1990")) -- "WORKS_AT<br/>since=2020" --> B2(("Acme<br/><i>:Company</i>"))
-    end
-
-    classDef rdf fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
-    classDef lpg fill:#dcfce7,stroke:#15803d,color:#14532d
-```
+- **Examples:** `IMGpedia`, `MMKG`, and `Richpedia`.
 
 
-### Historical lineage
+## Historical lineage
 
 | Year  | Concept                                                          | Description                                   |
 | ----- | ---------------------------------------------------------------- | --------------------------------------------- |
@@ -140,10 +102,54 @@ timeline
 
 From 2018 onward, knowledge graph (KG) research saw a surge in embedding models (TransE, ComplEx, RotatE) that map entities and relations into continuous vector spaces, enabling link prediction and neural‑driven reasoning. Concurrently, KG‑augmented large language models emerged to ground LLMs with structured, updatable facts, mitigating hallucinations and forming a neuro‑symbolic stack that integrates KGs deeply into deep‑learning pipelines. **This trend directly underpins Retrieval-Augmented Generation (RAG): KGs serve as structured, interpretable knowledge bases for retrieval, with Microsoft’s GraphRAG (2024) as a prominent example.**
 
+## The four layers of a KG
 
+A KG has **four conceptual layers**. 
 
+| Layer                 | Standards                                      | Adds                                                            | Failure mode if absent                                               |
+| --------------------- | ---------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Reasoning / Rules** | OWL 2, SWRL, SHACL Rules, Datalog              | Inferential power: derives new facts from old                   | Generic graph DB; no implied facts, every triple must be asserted    |
+| **Schema / Ontology** | RDFS, OWL, SKOS                                | A *contract*: which classes / predicates exist, with what types | Free-text predicates; cannot guarantee data shape; weak interop      |
+| **Instance Data**     | RDF, LPG                                       | The graph itself: typed nodes and labelled edges                | No data — only an ontology; nothing to query                         |
+| **Identity**          | IRIs, blank nodes, `owl:sameAs`, ER algorithms | Stable, sharable references; entity de-duplication              | Duplicate / fragmented entities; "Alice in HR" ≠ "A. Smith in Sales" |
 
-## Directed edge-labelled graphs (the RDF view)
+For example, the triple `:alice :hasParent :bob` is simultaneously _guaranteed_ by each layer, in different ways:
+
+```mermaid
+flowchart LR
+    subgraph L4g["Layer 4"]
+        R["<b>Rule</b><br/>Parent(x,y) ∧ Parent(y,z)<br/>⇒ Grandparent(x,z)"]:::l4
+    end
+    subgraph L3g["Layer 3"]
+        S["<b>Schema</b><br/>:hasParent rdfs:domain :Person<br/>:hasParent rdfs:range :Person"]:::l3
+    end
+    subgraph L2g["Layer 2"]
+        D["<b>Data</b><br/>:alice :hasParent :bob"]:::l2
+    end
+    subgraph L1g["Layer 1"]
+        I["<b>Identity</b><br/>:alice ≡ &lt;http://ex.org/Alice123&gt;<br/>:bob   ≡ &lt;http://ex.org/Bob456&gt;"]:::l1
+    end
+
+    R -.->|derives Grandparent| D
+    S -->|infers :alice rdf:type :Person| D
+    D -->|asserts edge between| I
+
+    classDef l1 fill:#fef3c7,stroke:#a16207,color:#713f12
+    classDef l2 fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
+    classDef l3 fill:#dcfce7,stroke:#15803d,color:#14532d
+    classDef l4 fill:#fce7f3,stroke:#be185d,color:#831843
+```
+
+Where each layer matters in practice:
+
+- **Layer 1 (identity)** is where most enterprise KG projects fail. Reconciling that "Alice in HR" and "A. Smith in Sales" denote the same person is the _hard_ part — and it is invisible to anyone looking only at the graph diagram.
+- **Layer 2 (data)** is what people draw when they say "show me a KG." It is also the only layer present in many demo systems, which is why those demos do not generalise.
+- **Layer 3 (schema)** is the ontology — the contract that all data must satisfy. It is what makes a KG queryable across teams and systems.
+- **Layer 4 (rules)** is what gives a KG its inferential power and distinguishes it from a generic graph database. Without Layer 4, the KG can only return what was explicitly stored.
+
+# Formal definition
+
+## The RDF / directed-edge-labelled-graph model
 
 A **directed edge-labelled graph** is a tuple
 $$G = (V,\ E,\ L)$$where
@@ -167,9 +173,22 @@ graph LR
 ```
 
 
-## Property graphs (the Neo4j view)
+**RDF** refines this with three alphabets:
+- $\mathbf{I}$ = IRIs (globally unique identifiers, e.g. `<http://example.org/Alice>`),
+- $\mathbf{B}$ = blank nodes (anonymous existentials),
+- $\mathbf{L}$ = literals (typed values, e.g. `"42"^^xsd:integer`).
 
-### Definition
+An **RDF triple** is an element of
+
+$$(\mathbf{I} \cup \mathbf{B}) \times \mathbf{I} \times (\mathbf{I} \cup \mathbf{B} \cup \mathbf{L})$$
+
+They the following properties:
+
+1. **Predicates must be IRIs.** This rules out "self-describing" predicates and is what enables OWL inference.
+2. **Objects can be literals; subjects cannot.** Hence "Alice's name" becomes a *new triple*, not a node attribute.
+3. **Blank nodes are existentials, not anonymous IDs.** `_:b1 foaf:knows :alice` means *"there exists someone who knows Alice."*
+
+## The property-graph (LPG) model
 
 A **property graph** is a tuple
 
@@ -181,12 +200,6 @@ where
 - $\rho : E \to V \times V$ is the **incidence function** assigning a (source, target) pair to each edge;
 - $\lambda : V \cup E \to \mathrm{Lab}$ assigns a **label** to every vertex and edge;
 - $\sigma : (V \cup E) \times \mathrm{Key} \to \mathrm{Val}$ is a partial function assigning **key-value properties** to vertices and edges.
-
-The crucial differences from the RDF definition are:
-
-1. **Edges have identity.** $E$ is a separate set, not a subset of $V \times L \times V$. Two edges between the same pair of vertices are distinct objects.
-2. **Edges carry properties.** $\sigma$ ranges over $V \cup E$, so an edge `WORKS_AT` can have a `since: 2020` attribute *natively*.
-3. **No global identifier alphabet.** Vertices and edges are identified by internal IDs, not IRIs. There is no built-in interoperability story.
 
 ```mermaid
 graph LR
@@ -207,14 +220,76 @@ graph LR
 ```
 
 
+## Two models Comparison
 
-### Cypher Language
+```mermaid
+graph TB
+    subgraph RDF["RDF (triple-based) view"]
+        A1((":alice")) -- ":worksAt" --> B1((":acme"))
+        A1 -- ":hasName" --> N1["'Alice Smith'"]
+        A1 -- ":bornIn" --> Y1["1990"]
+    end
+
+    subgraph LPG["Property Graph view"]
+        A2(("Alice<br/><i>:Person</i><br/>name='Alice Smith'<br/>bornIn=1990")) -- "WORKS_AT<br/>since=2020" --> B2(("Acme<br/><i>:Company</i>"))
+    end
+
+    classDef rdf fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
+    classDef lpg fill:#dcfce7,stroke:#15803d,color:#14532d
+```
+
+|                      | RDF triples                                            | Property Graph (LPG)                                        |
+| -------------------- | ------------------------------------------------------ | ----------------------------------------------------------- |
+| **Atom**             | `(subject, predicate, object)` triple                  | Node *with* properties; edge *with* properties              |
+| **Identity**         | Global IRIs                                            | Local internal IDs                                          |
+| **Schema**           | Optional, separate (RDFS / OWL)                        | Optional, often inline (labels, types)                      |
+| **Standard query**   | SPARQL 1.1                                             | Cypher / GQL (ISO/IEC 39075:2024) / Gremlin                 |
+| **Strength**         | Web-scale interop, formal semantics, OWL inference     | Ergonomics, traversal performance, edge attributes          |
+| **Weakness**         | Verbose, awkward for n-ary relations / edge attributes | No standard semantics, weaker reasoning, no global identity |
+| **Reference impls.** | Apache Jena, GraphDB, Stardog, Virtuoso, RDFox         | Neo4j, TigerGraph, Memgraph, JanusGraph                     |
+
+# Use cases — with particular attention to RAG
+
+## The four classical families
+
+Across the literature, four use-case families recur:
+
+1. **Search & question answering.** Google's KG can turn *"who is Obama's wife"* into an entity card; the modern descendant is GraphRAG over enterprise documents. The KG provides typed, disambiguated entities and relations that resolve referential ambiguity.
+2. **Data integration / Customer 360.** Fusing CRM + support + billing + marketing under one entity-resolved graph. The KG's identity layer (Layer 1) is the central asset; the schema is often pragmatic and lightweight.
+3. **Reasoning & analytics.** Fraud detection (path patterns: "is there a cycle of payments through three shell companies?"), drug discovery (link prediction over protein–disease–compound graphs), supply-chain risk (transitive dependencies after a port closure).
+4. **Recommendation & personalization.** Netflix, LinkedIn, Spotify use KGs as *feature sources* for ML rather than for symbolic reasoning. Embeddings on the KG (TransE, ComplEx, RotatE) feed downstream recommenders.
+
+## RAG and why KGs help
+
+**Retrieval-Augmented Generation (RAG)** augments an LLM's prompt with retrieved evidence at query time. The default implementation is *vector RAG*: chunk the corpus, embed each chunk, retrieve top-$k$ by cosine similarity, paste into the prompt. This works well for *local* questions answered by a single passage, but fails predictably on:
+
+- **Multi-hop questions** ("which co-author of Alice has worked at the same company as Bob?") — requires chained inference, not a single similarity lookup.
+- **Global / aggregative questions** ("what are the main themes across these 500 reports?") — top-$k$ can never see the whole corpus.
+- **Structured constraints** ("list every drug interacting with X that is approved in the EU and dosed under 50 mg") — vector similarity has no notion of typed predicates or numeric filters.
+- **Provenance / audit** ("which document says this?") — chunks blur source attribution; a triple is a single citable unit.
+
+The following diagram shows the improvements from **Traditional RAG** to **GraphRAG**.
+
+![[rag_vs_graphrag.png]]
+
+
+# Construction of Knowledge Graphs
+
+In practice, the KG is the **most expensive artefact** in any KG-RAG project. Public surveys put 60–80% of total project time on extraction, entity resolution, and quality control — long before anyone writes a SPARQL or vector query.
+
+A clean construction pipeline gives the rest of the thesis three things:
+1. **Reproducibility.** A documented pipeline lets reviewers regenerate the KG from sources.
+2. **Quality bounds.** You can attribute a downstream error (a wrong RAG answer) to a specific stage (mis-linked entity, missing relation, broken constraint).
+3. **Cost / freshness trade-offs.** Streaming vs. batch, materialized vs. virtual, schema-first vs. schema-later — each is a thesis-defensible decision.
+
+## Knowledge Acquisition
 
 
 
-## Software Ecosystem & Graphical Representation
 
-### Taxonomy of KG storage software
+# Software Ecosystem & Graphical Representation
+
+## Taxonomy of KG storage software
 
 ```mermaid
 graph TD
@@ -240,7 +315,7 @@ graph TD
 ```
 
 
-### Toolchain
+## Toolchain
 
 The store is only the centre of the stack. A real KG project needs **mapping**, **validation**, **ontology authoring**, **query interfaces**, and **embeddings/ML**. The full pipeline:
 
@@ -317,3 +392,11 @@ graph LR
     classDef tool fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
     classDef store fill:#dcfce7,stroke:#15803d,color:#14532d
 ```
+
+
+
+![[main_fig.png]]
+![[retrieval.png]]
+
+## References
+

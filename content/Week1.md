@@ -305,40 +305,63 @@ In practice, the KG is the **most expensive artefact** in any KG-RAG project. 
 Almost every KG-construction paper since Paulheim (2017) and Zhong et al. (2023) maps its work to the same three stages.
 
 ```mermaid
+---
+config:
+  flowchart:
+    htmlLabels: false
+---
 flowchart TB
     %% Heterogeneous inputs
-    I1["<b>Unstructured</b><br/><i>text, papers,<br/>news, web</i>"]:::input
-    I2["<b>Semi-structured</b><br/><i>tables, infoboxes,<br/>HTML, JSON</i>"]:::input
-    I3["<b>Structured</b><br/><i>RDB, existing KGs,<br/>Wikidata, OBO</i>"]:::input
+    I1["`**Unstructured**
+    *text, papers,
+    news, web*`"]:::input
+    I2["`**Semi-structured**
+    *tables, infoboxes,
+    HTML, JSON*`"]:::input
+    I3["`**Structured**
+    *RDB, existing KGs,
+    Wikidata, OBO*`"]:::input
 
     %% Stage 1
-    subgraph S1["<b>Stage 1 &nbsp;·&nbsp; Knowledge Acquisition</b>"]
+    subgraph S1["`**Stage 1 · Knowledge Acquisition**`"]
         direction TB
-        S1A["1.1 Ontology engineering<br/>or re-use"]:::step
-        S1B["1.2 Entity extraction<br/>NER + entity linking"]:::step
-        S1C["1.3 Relation extraction<br/>OpenIE / supervised RE / LLM"]:::step
-        S1D["1.4 Attribute &amp; event extraction<br/>coreference resolution"]:::step
+        S1A["`1.1 Ontology engineering
+        or re-use`"]:::step
+        S1B["`1.2 Entity extraction
+        NER + entity linking`"]:::step
+        S1C["`1.3 Relation extraction
+        OpenIE / supervised RE / LLM`"]:::step
+        S1D["`1.4 Attribute and event extraction
+        coreference resolution`"]:::step
     end
 
     %% Stage 2
-    subgraph S2["<b>Stage 2 &nbsp;·&nbsp; Knowledge Refinement</b>"]
+    subgraph S2["`**Stage 2 · Knowledge Refinement**`"]
         direction TB
-        S2A["2.1 Entity resolution<br/>and deduplication"]:::step
-        S2B["2.2 Knowledge graph completion<br/>link prediction (KGE)"]:::step
-        S2C["2.3 Conflict resolution<br/>truth discovery"]:::step
-        S2D["2.4 Validation (SHACL)<br/>consistency checking (OWL)"]:::step
+        S2A["`2.1 Entity resolution
+        and deduplication`"]:::step
+        S2B["`2.2 Knowledge graph completion
+        link prediction (KGE)`"]:::step
+        S2C["`2.3 Conflict resolution
+        truth discovery`"]:::step
+        S2D["`2.4 Validation (SHACL)
+        consistency checking (OWL)`"]:::step
     end
 
     %% Stage 3
-    subgraph S3["<b>Stage 3 &nbsp;·&nbsp; Knowledge Evolution</b>"]
+    subgraph S3["`**Stage 3 · Knowledge Evolution**`"]
         direction TB
-        S3A["3.1 Versioning<br/>temporal reasoning"]:::step
-        S3B["3.2 Continuous ingestion<br/>drift detection"]:::step
-        S3C["3.3 Schema evolution"]:::step
+        S3A["`3.1 Versioning
+        temporal reasoning`"]:::step
+        S3B["`3.2 Continuous ingestion
+        drift detection`"]:::step
+        S3C["`3.3 Schema evolution`"]:::step
     end
 
     %% Output artefact
-    KG[("<b>Knowledge Graph</b><br/>data + schema +<br/>provenance + version")]:::output
+    KG["`**Knowledge Graph**
+    data + schema +
+    provenance + version`"]:::output
 
     %% Forward pipeline
     I1 --> S1
@@ -472,4 +495,3 @@ graph TD
 
 
 ## References
-

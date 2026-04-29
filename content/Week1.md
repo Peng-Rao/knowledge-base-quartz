@@ -248,6 +248,32 @@ graph TB
 | **Weakness**         | Verbose, awkward for n-ary relations / edge attributes | No standard semantics, weaker reasoning, no global identity |
 | **Reference impls.** | Apache Jena, GraphDB, Stardog, Virtuoso, RDFox         | Neo4j, TigerGraph, Memgraph, JanusGraph                     |
 
+# The canonical rules
+
+This section answers the question: *given a KG, what rules does it obey?* The canonical rules live in a stack of standards above the data — different in detail between RDF and LPG, but conceptually the same.
+
+## The RDF / Semantic-Web layer cake
+
+![[rdf_layer_cake.svg]]
+
+Each plane adds a different kind of guarantee. Below: what each layer is, and the canonical rule it imposes.
+
+| Layer               | Standard                        | Purpose                                                          | Canonical rule example                                     |
+| ------------------- | ------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Identity**        | IRIs, blank nodes, `owl:sameAs` | Stable, sharable naming                                          | `<http://ex.org/Alice> owl:sameAs <http://wiki.org/Alice>` |
+| **Data**            | RDF / RDF-star                  | Atomic facts                                                     | `:alice :knows :bob .`                                     |
+| **Schema (light)**  | RDFS                            | Class/property hierarchy, domain/range                           | `:hasParent rdfs:domain :Person ; rdfs:range :Person .`    |
+| **Ontology (rich)** | OWL 2                           | DL axioms — equivalence, cardinality, transitivity, disjointness | `:hasAncestor a owl:TransitiveProperty .`                  |
+| **Vocabularies**    | SKOS                            | Thesauri, controlled vocab                                       | `:Berlin skos:broader :Germany .`                          |
+| **Constraints**     | SHACL / ShEx                    | Validation shapes, closed-world                                  | `sh:property [sh:path :name; sh:minCount 1]`               |
+| **Rules**           | SWRL / SHACL Rules / Datalog    | Forward-chaining inference                                       | `Parent(?x, ?y) ∧ Parent(?y, ?z) → Grandparent(?x, ?z)`    |
+| **Query**           | SPARQL 1.1                      | Graph-pattern matching, federation, updates                      | `SELECT ?x WHERE { ?x a :Person }`                         |
+
+## The LPG layer cake
+
+![[lpg_layer_cake.svg]]
+
+
 # Use cases — with particular attention to RAG
 
 ## The four classical families
@@ -272,22 +298,126 @@ The following diagram shows the improvements from **Traditional RAG** to **Graph
 
 ![[rag_vs_graphrag.png]]
 
-
 # Construction of Knowledge Graphs
 
 In practice, the KG is the **most expensive artefact** in any KG-RAG project. Public surveys put 60–80% of total project time on extraction, entity resolution, and quality control — long before anyone writes a SPARQL or vector query.
 
-A clean construction pipeline gives the rest of the thesis three things:
-1. **Reproducibility.** A documented pipeline lets reviewers regenerate the KG from sources.
-2. **Quality bounds.** You can attribute a downstream error (a wrong RAG answer) to a specific stage (mis-linked entity, missing relation, broken constraint).
-3. **Cost / freshness trade-offs.** Streaming vs. batch, materialized vs. virtual, schema-first vs. schema-later — each is a thesis-defensible decision.
+Almost every KG-construction paper since Paulheim (2017) and Zhong et al. (2023) maps its work to the same three stages.
+
+```mermaid
+flowchart TB
+    %% Heterogeneous inputs
+    I1["<b>Unstructured</b><br/><i>text, papers,<br/>news, web</i>"]:::input
+    I2["<b>Semi-structured</b><br/><i>tables, infoboxes,<br/>HTML, JSON</i>"]:::input
+    I3["<b>Structured</b><br/><i>RDB, existing KGs,<br/>Wikidata, OBO</i>"]:::input
+
+    %% Stage 1
+    subgraph S1["<b>Stage 1 &nbsp;·&nbsp; Knowledge Acquisition</b>"]
+        direction TB
+        S1A["1.1 Ontology engineering<br/>or re-use"]:::step
+        S1B["1.2 Entity extraction<br/>NER + entity linking"]:::step
+        S1C["1.3 Relation extraction<br/>OpenIE / supervised RE / LLM"]:::step
+        S1D["1.4 Attribute &amp; event extraction<br/>coreference resolution"]:::step
+    end
+
+    %% Stage 2
+    subgraph S2["<b>Stage 2 &nbsp;·&nbsp; Knowledge Refinement</b>"]
+        direction TB
+        S2A["2.1 Entity resolution<br/>and deduplication"]:::step
+        S2B["2.2 Knowledge graph completion<br/>link prediction (KGE)"]:::step
+        S2C["2.3 Conflict resolution<br/>truth discovery"]:::step
+        S2D["2.4 Validation (SHACL)<br/>consistency checking (OWL)"]:::step
+    end
+
+    %% Stage 3
+    subgraph S3["<b>Stage 3 &nbsp;·&nbsp; Knowledge Evolution</b>"]
+        direction TB
+        S3A["3.1 Versioning<br/>temporal reasoning"]:::step
+        S3B["3.2 Continuous ingestion<br/>drift detection"]:::step
+        S3C["3.3 Schema evolution"]:::step
+    end
+
+    %% Output artefact
+    KG[("<b>Knowledge Graph</b><br/>data + schema +<br/>provenance + version")]:::output
+
+    %% Forward pipeline
+    I1 --> S1
+    I2 --> S1
+    I3 --> S1
+    S1 ==> S2
+    S2 ==> S3
+    S3 ==> KG
+
+    %% Feedback loops
+    KG -. ontology revision .-> S1
+    KG -. new sources .-> S2
+    S2 -. residual errors .-> S1
+
+    classDef input  fill:#f9fafb,stroke:#6b7280,color:#111827,stroke-width:1px
+    classDef step   fill:#eff6ff,stroke:#1e40af,color:#1e3a8a,stroke-width:1px
+    classDef output fill:#ecfdf5,stroke:#15803d,color:#14532d,stroke-width:2px
+```
+
+
 
 ## Knowledge Acquisition
 
+#### Sources
 
+- **Unstructured text** — papers, Wikipedia, news, manuals. Hardest to extract from; most signal.
+- **Semi-structured** — HTML tables, infoboxes, schema.org markup, JSON.
+- **Tabular / relational** — CSV, RDB. Mature mappers (R2RML, RML, OBDA tools like Ontop).
+- **Existing KGs** — Wikidata, schema.org, OBO Foundry. Re-use first, build only what is missing.
 
+#### Sub-tasks
 
-# Software Ecosystem & Graphical Representation
+| Sub-task                       | Classical method                           | Modern (LLM-empowered)                     |
+| ------------------------------ | ------------------------------------------ | ------------------------------------------ |
+| Named Entity Recognition (NER) | CRF, BiLSTM, BERT-NER                      | LLM with type-list prompt                  |
+| Entity Linking (EL)            | TF-IDF + popularity priors, BLINK          | LLM + retrieval over Wikidata labels       |
+| Relation Extraction (RE)       | Pattern-based, distantly supervised, REBEL | Few-shot LLM extraction with schema prompt |
+| Coreference Resolution         | Mention-pair classifiers, neural coref     | LLM in-context                             |
+| Open Information Extraction    | OpenIE, ReVerb, Stanford OIE               | LLM with "extract (s, p, o)" prompt        |
+| Event extraction               | Frame-net rules, ACE-trained models        | LLM with event ontology in context         |
+
+The *LLM-empowered* column is the relevant frontier for the thesis: small models can do high-precision schema-constrained extraction when given a carefully designed prompt and a reference ontology (Khorashadizadeh et al., 2025).
+
+## Refinement
+
+### Entity resolution
+
+Two records refer to the same real-world entity if they pass a *match function* over their attributes. Approaches: deterministic rules (canonicalised name + birth date), probabilistic (Fellegi-Sunter), embedding similarity (DeepMatcher), LLM-as-judge. In RDF, the resolution is published as `owl:sameAs` triples; in LPG, by merging nodes.
+
+### Knowledge Graph Completion (KGC) — embeddings
+
+Real KGs are radically incomplete. *Knowledge Graph Embedding* methods learn vector representations of entities and relations such that `(s, p, o)` is a triple iff some scoring function $f(s, p, o)$ is high. The three reference families:
+
+| Model | Idea | Captures |
+|---|---|---|
+| **TransE** (Bordes et al., 2013) | $\mathbf{s} + \mathbf{p} \approx \mathbf{o}$ in $\mathbb{R}^d$ | Composition; struggles with symmetry |
+| **ComplEx** (Trouillon et al., 2016) | Complex-valued embeddings; Hermitian dot product | Symmetric *and* antisymmetric relations |
+| **RotatE** (Sun et al., 2019) | Relation = rotation in complex plane; $\mathbf{o} = \mathbf{s} \circ \mathbf{p}$ | Symmetry, antisymmetry, inversion, composition |
+
+Newer GNN-based KGE (R-GCN, CompGCN, NBFNet) outperform on benchmarks but at higher training cost.
+
+### Validation: SHACL and OWL
+
+- **SHACL** (closed-world, validation): a *shape* declares constraints (`every Person must have ≥1 name and exactly 1 birth date`); the validator returns a *report* of violations.
+- **OWL** (open-world, inference): an axiom (`hasParent rdfs:domain Person`) *adds* triples to the closure (inferring `:alice rdf:type Person` from `:alice :hasParent :bob`).
+
+Distinguishing the two is the single most common Semantic-Web confusion. SHACL says *"is the data wrong?"*. OWL says *"what else is true?"*. Both run in Stage 2; the thesis pipeline uses SHACL for hard validation gates and OWL only for type-propagation.
+
+## Evolution
+
+Real KGs change. The evolution stage handles:
+
+- **Versioning** — every triple carries a `dct:created` / `dct:modified` timestamp, or sits in a named graph indexed by version.
+- **Temporal reasoning** — Allen interval algebra, time-indexed predicates, RDF-star annotations.
+- **Incremental ingestion** — streaming pipelines (Kafka → SPARQL UPDATE / Cypher MERGE).
+- **Schema evolution** — when a class splits or a predicate is renamed, *migration scripts* update both data and inferences.
+- **Drift detection** — anomaly detection over predicate frequencies; alerts when extraction quality regresses.
+
+# Software Ecosystem
 
 ## Taxonomy of KG storage software
 
@@ -299,13 +429,13 @@ graph TD
     Root --> LPG["<b>Property-graph databases</b><br/>Cypher / Gremlin / GQL"]:::lpg
     Root --> Multi["<b>Multi-model</b><br/>support both"]:::mm
 
-    RDF --> RDFopen["Open-source<br/>Apache Jena (Fuseki)<br/>RDF4J<br/>Blazegraph (legacy)<br/>Oxigraph<br/>Virtuoso OS"]:::tool
-    RDF --> RDFcomm["Commercial<br/>GraphDB (Ontotext)<br/>Stardog<br/>AllegroGraph<br/>RDFox (Oxford Semantic)<br/>Virtuoso Enterprise"]:::tool
+    RDF --> RDFopen["Open-source<br/>Apache Jena (Fuseki)<br/>RDF4J · Oxigraph<br/>Virtuoso OS"]:::tool
+    RDF --> RDFcomm["Commercial<br/>GraphDB · Stardog<br/>AllegroGraph · RDFox<br/>Virtuoso Enterprise"]:::tool
 
-    LPG --> LPGopen["Open-source<br/>Neo4j Community<br/>JanusGraph<br/>Memgraph CE<br/>NebulaGraph<br/>Apache AGE (Postgres)"]:::tool
-    LPG --> LPGcomm["Commercial / Cloud<br/>Neo4j Enterprise / AuraDB<br/>TigerGraph<br/>Memgraph Enterprise<br/>Amazon Neptune (LPG mode)<br/>TypeDB"]:::tool
+    LPG --> LPGopen["Open-source<br/>Neo4j Community<br/>JanusGraph · Memgraph CE<br/>NebulaGraph · Apache AGE"]:::tool
+    LPG --> LPGcomm["Commercial / Cloud<br/>Neo4j Aura · TigerGraph<br/>Memgraph Ent. · Neptune (LPG)<br/>TypeDB"]:::tool
 
-    Multi --> Multitools["Amazon Neptune<br/>(RDF + LPG)<br/>ArangoDB (multi-model)<br/>Stardog (RDF + virtual graphs)<br/>Anzo (RDF + GraphQL)"]:::tool
+    Multi --> Multitools["Amazon Neptune (RDF + LPG)<br/>ArangoDB · Stardog (virtual)<br/>Anzo (RDF + GraphQL)"]:::tool
 
     classDef root fill:#fef3c7,stroke:#a16207,color:#713f12
     classDef rdf fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
@@ -313,90 +443,33 @@ graph TD
     classDef mm  fill:#fce7f3,stroke:#be185d,color:#831843
     classDef tool fill:#f3f4f6,stroke:#9ca3af,color:#374151
 ```
+## RDF triple stores
+
+| Store | Licence | Reasoning | RDF-star | Scale | Why pick it |
+|---|---|---|---|---|---|
+| **Apache Jena / Fuseki** | Apache 2.0 | RDFS, OWL Mini/Lite, custom rules | Yes | ≤ 1B triples | Research default; Java API; free. |
+| **GraphDB (Ontotext)** | Free + Commercial | OWL 2 RL/QL, materialised | Yes | 10B+ | Best-in-class OWL inference; SHACL; cluster mode. |
+| **Stardog** | Commercial | OWL 2, SWRL, virtual graphs over RDB | Yes | 100B+ | Enterprise platform; SHACL; GraphQL. |
+| **RDFox** | Commercial | Datalog, OWL 2 RL, parallel materialisation | Yes | In-memory, very fast | Spinout of Oxford CS — fastest reasoning. |
+| **Virtuoso** | Open + Commercial | RDFS, partial OWL, SQL/RDF hybrid | Yes | 100B+ | Powers DBpedia and the Linked Open Data Cloud. |
+| **AllegroGraph** | Commercial | OWL 2 RL, FOL via Prolog, geospatial, temporal | Yes | 10B+ | Strongest temporal / geospatial. |
+| **Oxigraph** | Apache 2.0 | None | Yes | ≤ 100M | Pure-Rust, embeddable; great `pyoxigraph`. |
+| **Blazegraph** | GPL (archived) | RDFS+, partial OWL | No | 50B (Wikidata) | **Archived 2020.** Do not start new work on it. |
 
 
-## Toolchain
+## Property-graph databases
 
-The store is only the centre of the stack. A real KG project needs **mapping**, **validation**, **ontology authoring**, **query interfaces**, and **embeddings/ML**. The full pipeline:
-
-```mermaid
-graph LR
-    subgraph S["Sources"]
-        S1[Tabular<br/>CSV / RDB]:::src
-        S2[Documents<br/>PDF / HTML]:::src
-        S3[Existing KGs<br/>Wikidata / schema.org]:::src
-    end
-
-    subgraph M["Mapping / Extraction"]
-        M1[R2RML / RML<br/>Morph-KGC, RMLMapper]:::tool
-        M2[NER + RE<br/>spaCy, REBEL,<br/>LLM-extractors]:::tool
-        M3[SPARQL CONSTRUCT<br/>federated import]:::tool
-    end
-
-    subgraph O["Ontology"]
-        O1[Protégé<br/>OWL / SHACL editor]:::tool
-        O2[TopBraid Composer]:::tool
-        O3[WebVOWL<br/>visual ontology browsing]:::tool
-    end
-
-    subgraph DB["Triple store / LPG"]
-        DB1[GraphDB / Stardog /<br/>Jena Fuseki / Neo4j]:::store
-    end
-
-    subgraph V["Validation & Reasoning"]
-        V1[pySHACL<br/>SHACL validator]:::tool
-        V2[HermiT / Pellet / ELK<br/>OWL reasoners]:::tool
-        V3[RDFox / Datalog<br/>rule materialisation]:::tool
-    end
-
-    subgraph Q["Query & API"]
-        Q1[SPARQL endpoint]:::tool
-        Q2[GraphQL gateway<br/>Hasura, HyperGraphQL]:::tool
-        Q3[Cypher / Gremlin /<br/>GQL]:::tool
-    end
-
-    subgraph ML["Embeddings & ML"]
-        ML1[PyKEEN<br/>AmpliGraph]:::tool
-        ML2[DGL-KE / PyG]:::tool
-        ML3[GraphRAG<br/>LightRAG, HippoRAG]:::tool
-    end
-
-    subgraph Vi["Visualization"]
-        Vi1[Neo4j Bloom / Browser]:::tool
-        Vi2[Gephi / Cytoscape]:::tool
-        Vi3[yFiles / KeyLines /<br/>Linkurious]:::tool
-        Vi4[SemSpect<br/>aggregated views]:::tool
-    end
-
-    S1 --> M1 --> DB1
-    S2 --> M2 --> DB1
-    S3 --> M3 --> DB1
-    O1 --> DB1
-    O2 --> DB1
-    DB1 --> V1
-    DB1 --> V2
-    DB1 --> V3
-    DB1 --> Q1
-    DB1 --> Q2
-    DB1 --> Q3
-    DB1 --> ML1
-    DB1 --> ML2
-    ML1 --> ML3
-    ML2 --> ML3
-    DB1 --> Vi1
-    DB1 --> Vi2
-    DB1 --> Vi3
-    DB1 --> Vi4
-
-    classDef src fill:#fef3c7,stroke:#a16207,color:#713f12
-    classDef tool fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
-    classDef store fill:#dcfce7,stroke:#15803d,color:#14532d
-```
+| Store | Licence | Schema/constraints | Query | Scale | Why pick it |
+|---|---|---|---|---|---|
+| **Neo4j** | Free + Commercial | Labels, UNIQUE, EXISTS, NODE KEY | Cypher → GQL | 100B+ edges (Enterprise) | The market leader; richest tooling (Bloom, GDS). |
+| **TigerGraph** | Commercial | Strong typed schema | GSQL | 100B+ | Best-in-class for analytic graph queries. |
+| **Memgraph** | Free + Commercial | Cypher constraints | Cypher | In-memory, very fast | Real-time; streaming-first. |
+| **JanusGraph** | Apache 2.0 | Schema management | Gremlin | 10B+ | Distributed; storage-pluggable (Cassandra, HBase). |
+| **NebulaGraph** | Apache 2.0 | Tag/edge schema | nGQL, openCypher | 100B+ | Strong in China; horizontal scale. |
+| **Apache AGE** | Apache 2.0 | Postgres types | openCypher inside Postgres | Postgres-bounded | If you already run Postgres. |
+| **TypeDB** | Free + Commercial | Strongly typed schema with rules | TypeQL | 1B+ | A property-graph DB with native rule reasoning — the closest LPG analogue of OWL. |
 
 
-
-![[main_fig.png]]
-![[retrieval.png]]
 
 ## References
 

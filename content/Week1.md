@@ -297,6 +297,26 @@ Across the literature, four use-case families recur:
 The following diagram shows the improvements from **Traditional RAG** to **GraphRAG**.
 
 ![[rag_vs_graphrag.png]]
+Source: https://github.com/DEEP-PolyU/Awesome-GraphRAG
+
+
+## The GraphRAG pipeline (Edge et al., 2024)
+
+![[Pasted image 20260429181948.png]]
+
+Source: https://graphrag.com/concepts/intro-to-graphrag/
+## GraphRAG flavors to compare
+
+| System                   | Year    | Substrate                             | Distinctive idea                                            |
+| ------------------------ | ------- | ------------------------------------- | ----------------------------------------------------------- |
+| **Microsoft GraphRAG**   | 2024    | LLM-extracted KG + Leiden communities | Hierarchical community summaries for global queries         |
+| **LightRAG**             | 2024    | LLM-extracted KG                      | Dual-level retrieval (entity + relation)                    |
+| **HippoRAG**             | 2024    | KG + Personalised PageRank            | Memory-inspired retrieval from KG seed entities             |
+| **GNN-RAG**              | 2024    | KG + GNN reasoner                     | Graph neural net selects reasoning paths                    |
+| **Hybrid (KG + vector)** | various | Both                                  | KG for entity disambiguation, vector for passage recall     |
+| **LazyGraphRAG**         | 2024    | Lazy index                            | Defers community summarisation to query time — much cheaper |
+
+I will compare at least two of these against vanilla vector RAG, holding the SLM constant.
 
 # Construction of Knowledge Graphs
 
@@ -304,7 +324,7 @@ In practice, the KG is the **most expensive artefact** in any KG-RAG project. 
 
 Almost every KG-construction paper since Paulheim (2017) and Zhong et al. (2023) maps its work to the same three stages.
 
-![[Images/kg_construction_pipeline.svg]]
+![[kg_construction_pipeline.svg]]
 
 ## Knowledge Acquisition
 
@@ -326,7 +346,7 @@ Almost every KG-construction paper since Paulheim (2017) and Zhong et al. (2023)
 | Open Information Extraction    | OpenIE, ReVerb, Stanford OIE               | LLM with "extract (s, p, o)" prompt        |
 | Event extraction               | Frame-net rules, ACE-trained models        | LLM with event ontology in context         |
 
-The *LLM-empowered* column is the relevant frontier for the thesis: small models can do high-precision schema-constrained extraction when given a carefully designed prompt and a reference ontology (Khorashadizadeh et al., 2025).
+The *LLM-empowered* column is the relevant frontier for the thesis: small models can do high-precision schema-constrained extraction when given a carefully designed prompt and a reference ontology.
 
 ## Refinement
 
@@ -418,3 +438,22 @@ graph TD
 
 
 ## References
+
+[1] Franz Baader, Diego Calvanese, Deborah L. McGuinness, Daniele Nardi, and Peter F. Patel-Schneider, (Eds.) 2007. The description logic handbook:
+theory, implementation and applications. en. (2nd ed.). Cambridge University Press, (Aug. 2007). isbn: 978-0-521-87625-4 978-0-511-71178-7
+978-0-521-15011-8. doi:10.1017/CBO9780511711787.
+[2] Darren Edge et al. 2025. From local to global: a graph RAG approach to query-focused summarization. en. arXiv:2404.16130 [cs]. (Feb. 2025).
+doi:10.48550/arXiv.2404.16130.
+[3] Lisa Ehrlinger and Wolfram Wöß. 2016. Towards a definition of knowledge graphs. SEMANTiCS (Posters, Demos, SuCCESS), 48, 1-4, 2.
+[4] Pascal Hitzler, Markus Krötzsch, Bijan Parsia, Peter F. Patel-Schneider, and Sebastian Rudolph. 2012. Owl 2 web ontology language primer (second
+edition). In https://api.semanticscholar.org/CorpusID:57542951.
+[5] Aidan Hogan, Michael Cochez, and Gerard de Melo. 2022. Knowledge graphs. en. Number 22 in Synthesis lectures on data, semantics and knowledge.
+Springer, Cham. isbn: 978-3-031-01918-0 978-3-031-00790-3 978-3-031-00113-0.
+[6] Shirui Pan, Linhao Luo, Yufei Wang, Chen Chen, Jiapu Wang, and Xindong Wu. 2024. Unifying large language models and knowledge graphs: a
+roadmap. en. IEEE Transactions on Knowledge and Data Engineering, 36, 7, (July 2024), 3581–3599. doi:10.1109/TKDE.2024.3352100.
+[7] Heiko Paulheim. 2016. Knowledge graph refinement: a survey of approaches and evaluation methods. en. Semantic Web, 8, 3, (Dec. 2016), 489–508.
+Philipp Cimiano, (Ed.) Citations: 765 (Crossref) [2026-04-29] Citations: 1229 (SemanticScholar) [2026-04-29]. doi:10.3233/SW-160218.
+[8] Gytundefined Tamašauskaitundefined and Paul Groth. 2023. Defining a knowledge graph development process through a systematic review. ACM
+Trans. Softw. Eng. Methodol., 32, 1, (Feb. 2023). doi:10.1145/3522586.
+[9] Qinggang Zhang et al. 2025. A survey of graph retrieval-augmented generation for customized large language models. en. arXiv:2501.13958 [cs]
+Citations: 99 (SemanticScholar) [2026-04-25]. (Sept. 2025). doi:10.48550/arXiv.2501.13958.

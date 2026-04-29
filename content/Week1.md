@@ -439,21 +439,20 @@ graph TD
 
 ## References
 
-[1] Franz Baader, Diego Calvanese, Deborah L. McGuinness, Daniele Nardi, and Peter F. Patel-Schneider, (Eds.) 2007. The description logic handbook:
-theory, implementation and applications. en. (2nd ed.). Cambridge University Press, (Aug. 2007). isbn: 978-0-521-87625-4 978-0-511-71178-7
-978-0-521-15011-8. doi:10.1017/CBO9780511711787.
-[2] Darren Edge et al. 2025. From local to global: a graph RAG approach to query-focused summarization. en. arXiv:2404.16130 [cs]. (Feb. 2025).
-doi:10.48550/arXiv.2404.16130.
-[3] Lisa Ehrlinger and Wolfram Wöß. 2016. Towards a definition of knowledge graphs. SEMANTiCS (Posters, Demos, SuCCESS), 48, 1-4, 2.
-[4] Pascal Hitzler, Markus Krötzsch, Bijan Parsia, Peter F. Patel-Schneider, and Sebastian Rudolph. 2012. Owl 2 web ontology language primer (second
-edition). In https://api.semanticscholar.org/CorpusID:57542951.
-[5] Aidan Hogan, Michael Cochez, and Gerard de Melo. 2022. Knowledge graphs. en. Number 22 in Synthesis lectures on data, semantics and knowledge.
-Springer, Cham. isbn: 978-3-031-01918-0 978-3-031-00790-3 978-3-031-00113-0.
-[6] Shirui Pan, Linhao Luo, Yufei Wang, Chen Chen, Jiapu Wang, and Xindong Wu. 2024. Unifying large language models and knowledge graphs: a
-roadmap. en. IEEE Transactions on Knowledge and Data Engineering, 36, 7, (July 2024), 3581–3599. doi:10.1109/TKDE.2024.3352100.
-[7] Heiko Paulheim. 2016. Knowledge graph refinement: a survey of approaches and evaluation methods. en. Semantic Web, 8, 3, (Dec. 2016), 489–508.
-Philipp Cimiano, (Ed.) Citations: 765 (Crossref) [2026-04-29] Citations: 1229 (SemanticScholar) [2026-04-29]. doi:10.3233/SW-160218.
-[8] Gytundefined Tamašauskaitundefined and Paul Groth. 2023. Defining a knowledge graph development process through a systematic review. ACM
-Trans. Softw. Eng. Methodol., 32, 1, (Feb. 2023). doi:10.1145/3522586.
-[9] Qinggang Zhang et al. 2025. A survey of graph retrieval-augmented generation for customized large language models. en. arXiv:2501.13958 [cs]
-Citations: 99 (SemanticScholar) [2026-04-25]. (Sept. 2025). doi:10.48550/arXiv.2501.13958.
+1. Franz Baader, Diego Calvanese, Deborah L. McGuinness, Daniele Nardi, and Peter F. Patel-Schneider (Eds.). *The Description Logic Handbook: Theory, Implementation and Applications* (2nd ed.). Cambridge University Press, 2007. doi:[10.1017/CBO9780511711787](https://doi.org/10.1017/CBO9780511711787)
+
+2. Darren Edge et al. "From Local to Global: A Graph RAG Approach to Query-Focused Summarization." *arXiv:2404.16130 [cs]*, 2024. doi:[10.48550/arXiv.2404.16130](https://doi.org/10.48550/arXiv.2404.16130)
+
+3. Lisa Ehrlinger and Wolfram Wöß. "Towards a Definition of Knowledge Graphs." *SEMANTiCS (Posters, Demos, SuCCESS)*, vol. 48, 2016.
+
+4. Pascal Hitzler, Markus Krötzsch, Bijan Parsia, Peter F. Patel-Schneider, and Sebastian Rudolph. *OWL 2 Web Ontology Language Primer* (2nd ed.). W3C Recommendation, 2012. [https://www.w3.org/TR/owl2-primer/](https://www.w3.org/TR/owl2-primer/)
+
+5. Aidan Hogan, Michael Cochez, and Gerard de Melo. *Knowledge Graphs*. No. 22 in Synthesis Lectures on Data, Semantics and Knowledge. Springer, Cham, 2022. doi:[10.1007/978-3-031-01918-0](https://doi.org/10.1007/978-3-031-01918-0)
+
+6. Shirui Pan, Linhao Luo, Yufei Wang, Chen Chen, Jiapu Wang, and Xindong Wu. "Unifying Large Language Models and Knowledge Graphs: A Roadmap." *IEEE Transactions on Knowledge and Data Engineering*, 36(7), 3581–3599, 2024. doi:[10.1109/TKDE.2024.3352100](https://doi.org/10.1109/TKDE.2024.3352100)
+
+7. Heiko Paulheim. "Knowledge Graph Refinement: A Survey of Approaches and Evaluation Methods." *Semantic Web*, 8(3), 489–508, 2016. doi:[10.3233/SW-160218](https://doi.org/10.3233/SW-160218)
+
+8. Gytė Tamašauskaitė and Paul Groth. "Defining a Knowledge Graph Development Process through a Systematic Review." *ACM Transactions on Software Engineering and Methodology*, 32(1), 2023. doi:[10.1145/3522586](https://doi.org/10.1145/3522586)
+
+9. Qinggang Zhang et al. "A Survey of Graph Retrieval-Augmented Generation for Customized Large Language Models." *arXiv:2501.13958 [cs]*, 2025. doi:[10.48550/arXiv.2501.13958](https://doi.org/10.48550/arXiv.2501.13958)
